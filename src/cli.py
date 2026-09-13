@@ -20,7 +20,6 @@ from .logging_config import get_logger
 
 logger = get_logger("bastiao.cli")
 
-
 class BastiaoCLI:
     """Interface CLI do BastiÃ£o."""
 
@@ -106,7 +105,7 @@ class BastiaoCLI:
         # Menu interativo
         while True:
             print("\nOpÃ§Ãµes:")
-            print("  [1-{}] Estudar tÃ³pico".format(len(plan.topics)))
+            print(f"  [1-{len(plan.topics)}] Estudar tÃ³pico")
             print("  [p] Progresso")
             print("  [q] Sair")
 
@@ -222,7 +221,7 @@ def main():
     plan_parser.add_argument("topic", help="TÃ³pico a estudar")
     plan_parser.add_argument("-l", "--level", default="iniciante", help="NÃ¬vel (iniciante, intermediario, avancado)")
     plan_parser.add_argument("-o", "--objective", default="", help="Objetivo especÃ¬fico")
-    plan_parser.add_argument("-h", "--hours", type=int, default=2, help="Horas por dia")
+    plan_parser.add_argument("-H", "--hours", type=int, default=2, dest="hours", help="Horas por dia")
 
     # Comando: study
     study_parser = subparsers.add_parser("study", help="Iniciar sessÃ£o de estudo")
