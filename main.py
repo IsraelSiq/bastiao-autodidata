@@ -17,7 +17,8 @@ O Bastiao vai:
 import os
 import logging
 
-from src.agent import BastiaoAgent
+from src.swe_agent import SWEAgent
+from src.github_client import GitHubClient
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,16 +38,47 @@ def main():
         return
 
     print("="*60)
-    print("BASTIAO AUTODIDATA - Autonomous Self-Developing Agent")
+    print("BASTIAO AUTODIDATA - SWE-agent Implementation")
     print("="*60)
     print(f"\nRepository: {owner}/{repo}")
-    print("\nStarting autonomous development loop...\n")
+    print("\nStarting autonomous development...\n")
 
-    agent = BastiaoAgent(owner, repo, token)
-    agent.run_loop(max_cycles=10)
+    # Inicializa
+    client = GitHubClient(owner, repo, token)
+    agent = SWEAgent()
+
+    # Le issues abertas
+    issues = client.list_issues(state="open")
+    print(f"Found {len(issues)} open issues\n")
+
+    # Processa cada issue
+    for issue in issues[:5]:  # Limita a 5 issues
+        print(f"\n{'='*60}")
+        print(f"Processing issue #{issue.number}: {issue.title}")
+        print(f"{'='*60}\n")
+
+        # Tenta resolver
+        success = agent.solve(
+            issue_title=issue.title,
+            issue_body=issue.body or "",
+        )
+
+        # Comenta na issue
+        if success:
+            client.add_comment(
+                issue.number,
+                f"✅ Implemented by Bastiao (SWE-agent)!",
+            )
+            print(f"Issue #{issue.number} solved!")
+        else:
+            client.add_comment(
+                issue.number,
+                f"❌ Failed to solve. Needs human help.",
+            )
+            print(f"Issue #{issue.number} failed.")
 
     print("\n" + "="*60)
-    print("Development complete!")
+    print("Development cycle complete!")
     print("="*60)
 
 
