@@ -21,34 +21,31 @@ logger = logging.getLogger("bastiao.swe_agent")
 class SWEAgent:
     """SWE-agent simplificado."""
 
-    SYSTEM_PROMPT = """You are a software engineering agent that fixes issues in GitHub repositories.
+    SYSTEM_PROMPT = """You are a software engineering agent. You MUST respond with actions only.
 
-You have access to these tools:
+AVAILABLE ACTIONS:
 - read <path>: Read a file
-- write <path> <content>: Write to a file
+- write <path> <content>: Write to a file  
 - run <command>: Run a shell command
 - search <pattern>: Search code
 - list [path]: List files
 
-Rules:
-1. Always read files before editing
-2. Test your changes with 'run'
-3. Use search to find relevant code
-4. Make small, incremental changes
-5. Always verify your changes work
+RESPONSE FORMAT:
+You MUST respond with ONLY actions, one per line. NO explanations.
 
-Respond with actions in this format:
-```
+Example response:
+list src
 read src/main.py
-```
+write src/hello.py print("Hello World")
+run python src/hello.py
 
-Or chain multiple actions:
-```
-read src/main.py
-write src/main.py print("Hello")
-run python src/main.py
-```
-"""
+RULES:
+1. ALWAYS use actions, never explanations
+2. Read files before editing
+3. Test changes with 'run'
+4. Say 'DONE' when finished
+
+Current task:"""
 
     def __init__(
         self,
@@ -90,13 +87,12 @@ run python src/main.py
 
 Description: {issue_body or 'No description'}
 
-Your task: Fix this issue by reading, editing, and testing code.
-Start by exploring the repository structure.
+Task: Fix this issue.
 
-Current state:
-{self._format_state()}
+Start by exploring the repository.
 
-What's your first action?"""
+Respond with actions ONLY:
+"""
 
         # Loop principal
         for i in range(self.max_iterations):
@@ -113,18 +109,37 @@ What's your first action?"""
                 return False
 
             self.history.append({"model_response": response})
+            logger.info(f"Model response: {response[:200]}")
 
             # 2. Extrai acoes
             actions = self._parse_actions(response)
+            logger.info(f"Parsed actions: {actions}")
+            
             if not actions:
                 logger.warning("No actions found in response")
-                break
+                # Tenta uma ultima vez com prompt mais direto
+                if i == self.max_iterations - 1:
+                    return False
+                user_prompt = f"""You MUST respond with actions.
+
+Previous response: {response}
+
+This is NOT valid. Respond with actions like:
+read src/main.py
+write src/test.py print("hello")
+
+Current state:
+{self._format_state()}
+
+Respond with actions NOW:"""
+                continue
 
             # 3. Executa acoes
             outputs = []
             for action in actions:
                 output = self.env.execute_action(action)
-                outputs.append(f"{action}\n{output}")
+                outputs.append(f"{action}\n=> {output[:200]}")
+                logger.info(f"Action: {action} => {output[:100]}")
 
             # 4. Prepara proximo prompt
             user_prompt = f"""Previous actions:
@@ -133,7 +148,8 @@ What's your first action?"""
 Current state:
 {self._format_state()}
 
-What's your next action? (or say 'DONE' if finished)"""
+What's your next action? Respond with actions ONLY.
+Say 'DONE' if finished."""
 
             # 5. Checa se terminou
             if "DONE" in response.upper() or "FINISHED" in response.upper():
@@ -160,8 +176,12 @@ What's your next action? (or say 'DONE' if finished)"""
         if matches:
             actions = []
             for match in matches:
-                actions.extend([line.strip() for line in match.splitlines() if line.strip()])
-            return actions
+                for line in match.splitlines():
+                    line = line.strip()
+                    if line and any(line.startswith(cmd) for cmd in ["read", "write", "run", "search", "list", "DONE", "FINISHED"]):
+                        actions.append(line)
+            if actions:
+                return actions
 
         # Pattern 2: Linhas individuais
         actions = []
