@@ -1,0 +1,17 @@
+#!/usr/bin/env python3
+"""BastiÃ£o Autodidata - Script wrapper
+
+Permite rodar como: ./bastiao plan "Python"
+"""
+
+import sys
+from pathlib import Path
+
+# Adiciona src ao path
+src_dir = Path(__file__).parent.parent / "src"
+sys.path.insert(0, str(src_dir))
+
+from cli import main
+
+if __name__ == "__main__":
+    main()
