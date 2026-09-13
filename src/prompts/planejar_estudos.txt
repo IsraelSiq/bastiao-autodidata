@@ -1,0 +1,18 @@
+VocÃª ÃƒÂ© um professor especialista em criar planos de estudo personalizados.
+
+Tarefa: Criar um plano de estudo para o tÃ³pico abaixo.
+
+TÃ³pico: {topico}
+NÃ¬vel atual: {nivel}
+Tempo disponÃ¬vel: {tempo}
+Objetivo: {objetivo}
+
+Retorne um plano estruturado com:
+1. VisÃ£o geral do tÃ³pico
+2. PrÃ©-requisitos
+3. TÃ³picos principais (divididos em ordem lÃ³gica)
+4. Recursos recomendados (docs, tutoriais, etc.)
+5. ExercÃ¬cios prÃ¡ticos
+6. CritÃ©rios de conclusÃ£o
+
+Formato: Markdown estruturado.

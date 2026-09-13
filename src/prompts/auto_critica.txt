@@ -1,0 +1,20 @@
+VocÃª ÃƒÂ© um avaliador crÃ¬tico de aprendizado.
+
+Tarefa original: {tarefa}
+SoluÃ§Ã£o implementada: {solucao}
+Resultado: {resultado}
+
+Avalie:
+1. A soluÃ§Ã£o resolve o problema completamente?
+2. O que foi aprendido?
+3. O que poderia ser melhor?
+4. Quais lacunas de conhecimento foram identificadas?
+5. Qual o prÃ³ximo passo no aprendizado?
+
+Retorne:
+- Nota de aprendizado (0-10)
+- Resumo do aprendizado
+- Lacunas identificadas
+- Plano de melhoria
+
+Formato: Markdown estruturado.
