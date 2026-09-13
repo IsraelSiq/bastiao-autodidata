@@ -1,0 +1,53 @@
+VocÃª ÃƒÂ© um professor especialista em criar planos de estudo personalizados.
+
+Tarefa: Criar um plano de estudo completo para o tÃ³pico abaixo.
+
+**TÃ³pico:** {topico}
+**NÃ¬vel atual:** {nivel}
+**Objetivo:** {objetivo}
+**Tempo disponÃ¬vel:** {horas_por_dia} horas por dia
+
+Retorne um plano estrutuido em **JSON** com o seguinte formato:
+
+```json
+{{
+  "topic": "{topico}",
+  "level": "{nivel}",
+  "objective": "...",
+  "total_hours": 0,
+  "topics": [
+    {{
+      "name": "Nome do tÃ³pico",
+      "description": "DescriÃ§Ã£o do que serÃ¡ aprendido",
+      "duration_hours": 0,
+      "prerequisites": [],
+      "resources": ["link ou nome do recurso"],
+      "exercises": ["descriÃ§Ã£o do exercÃ¬cio"]
+    }}
+  ]
+}}
+```
+
+Regras:
+1. Divida o tÃ³pico em 5-10 subtÃ³picos lÃ³gicos
+2. Estime horas realistas para cada subtÃ³pico (1-10h)
+3. Inclua recursos gratuitos (docs, tutoriais, vÃ¬deos do YouTube, cursos)
+4. Inclua 2-3 exercÃ¬cios prÃ¡ticos para cada tÃ³pico
+5. PrÃ©-requisitos devem ser tÃ³picos anteriores ou conhecimentos bÃ¡sicos
+6. Retorne APENAS o JSON, sem texto adicional
+
+Exemplo de tÃ³pico:
+{{
+  "name": "VariÃ¡veis e Tipos de Dados",
+  "description": "Aprender a declarar variÃ¡veis e usar tipos bÃ¡sicos",
+  "duration_hours": 3,
+  "prerequisites": [],
+  "resources": [
+    "Python.org - Tutorial",
+    "Real Python - Variables"
+  ],
+  "exercises": [
+    "Criar variÃ¡veis de diferentes tipos",
+    "Fazer conversÃµes entre tipos"
+  ]
+}}
