@@ -8,10 +8,24 @@ import logging
 from typing import Optional
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
+# Tenta carregar .env (se python-dotenv estiver instalado)
+try:
+    from dotenv import load_dotenv
+    # Carrega .env da raiz do projeto
+    env_path = Path(__file__).parent.parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+        print(f"Loaded .env from {env_path}")
+    else:
+        print("No .env found, using environment variables")
+except ImportError:
+    print("python-dotenv not installed, using environment variables only")
 
 
 @dataclass
