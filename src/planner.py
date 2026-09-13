@@ -1,266 +1,132 @@
-"""BastiÃ£o Autodidata - Planejador de Estudos
+"""Bastiao - Planner
 
-Gera planos de estudo personalizados usando LLM.
+Planeja implementacao baseado em issues.
 """
 
-import json
-import logging
+from dataclasses import dataclass
 from typing import Optional
-from dataclasses import dataclass, asdict
-from datetime import datetime, timedelta
 
-from .orchestrator import BastiaoOrchestrator, ChatMessage
-from .logging_config import get_logger
-
-logger = get_logger("bastiao.planner")
+from .github_client import GitHubIssue
 
 
 @dataclass
-class StudyTopic:
-    """TÃ³pico de estudo."""
-    name: str
+class Task:
+    """Task de implementacao."""
+    title: str
     description: str
-    duration_hours: int
-    prerequisites: list[str]
-    resources: list[str]
-    exercises: list[str]
-    completed: bool = False
+    files_to_create: list[str]
+    files_to_modify: list[str]
+    tests_needed: list[str]
+    priority: int = 1
 
 
-@dataclass
-class StudyPlan:
-    """Plano de estudo completo."""
-    topic: str
-    level: str
-    objective: str
-    total_hours: int
-    topics: list[StudyTopic]
-    created_at: str = ""
+class Planner:
+    """Planeja tasks baseado em issues."""
 
-    def __post_init__(self):
-        if not self.created_at:
-            self.created_at = datetime.now().isoformat()
+    def __init__(self):
+        """Inicializa o planner."""
+        pass
 
-    def to_dict(self) -> dict:
-        """Converte para dict."""
-        return asdict(self)
-
-    def to_json(self, indent: int = 2) -> str:
-        """Converte para JSON."""
-        return json.dumps(self.to_dict(), indent=indent, ensure_ascii=False)
-
-
-class StudyPlanner:
-    """Planeja estudos usando LLM."""
-
-    def __init__(
-        self,
-        orchestrator: BastiaoOrchestrator,
-        model: Optional[str] = None,
-    ):
-        """Inicializa o planner.
+    def plan_issue(self, issue: GitHubIssue) -> list[Task]:
+        """Cria plano de implementacao para uma issue.
 
         Args:
-            orchestrator: Orchestrator para chamar LLM
-            model: Modelo a usar (default: do orchestrator)
-        """
-        self.orchestrator = orchestrator
-        self.model = model
-        self.logger = logging.getLogger(__name__)
-
-    def create_plan(
-        self,
-        topic: str,
-        level: str = "iniciante",
-        objective: str = "",
-        hours_per_day: int = 2,
-    ) -> StudyPlan:
-        """Cria plano de estudo.
-
-        Args:
-            topic: TÃ³pico a estudar (ex: "Python", "Machine Learning")
-            level: NÃ¬vel atual (iniciante, intermediÃ¡rio, avanÃ§ado)
-            objective: Objetivo especÃ¬fico
-            hours_per_day: Horas por dia disponÃ¬veis
+            issue: Issue
 
         Returns:
-            StudyPlan com currÃ¬culo completo
+            Lista de tasks
         """
-        self.logger.info(f"Creating study plan: {topic} ({level})")
+        # Analisa a issue e cria tasks
+        # Isso aqui vai usar LLM pra gerar o plano
 
-        # Prompt de planejamento
-        prompt = f"""VocÃª ÃƒÂ© um professor especialista em criar planos de estudo personalizados.
+        title = issue.title.lower()
 
-Tarefa: Criar um plano de estudo completo para o tÃ³pico abaixo.
+        # Heuristica simples por enquanto
+        if "criar" in title or "create" in title:
+            return self._plan_create_task(issue)
+        elif "atualizar" in title or "update" in title:
+            return self._plan_update_task(issue)
+        elif "teste" in title or "test" in title:
+            return self._plan_test_task(issue)
+        else:
+            return self._plan_generic_task(issue)
 
-**TÃ³pico:** {topic}
-**NÃ¬vel atual:** {level}
-**Objetivo:** {objective or "Aprender o tÃ³pico de forma completa"}
-**Tempo disponÃ¬vel:** {hours_per_day} horas por dia
+    def _plan_create_task(self, issue: GitHubIssue) -> list[Task]:
+        """Planeja task de criacao."""
+        task = Task(
+            title=f"Implementar: {issue.title}",
+            description=issue.body or "",
+            files_to_create=[],
+            files_to_modify=[],
+            tests_needed=[],
+            priority=1,
+        )
 
-Retorne um plano estrutuido em **JSON** com o seguinte formato:
+        # Tenta extrair nome do arquivo do titulo
+        if ".py" in issue.title:
+            filename = issue.title.split(".py")[0] + ".py"
+            if "src/" not in filename:
+                filename = f"src/{filename}"
+            task.files_to_create.append(filename)
 
-```json
-{{
-  "topic": "{topic}",
-  "level": "{level}",
-  "objective": "...",
-  "total_hours": 0,
-  "topics": [
-    {{
-      "name": "Nome do tÃ³pico",
-      "description": "DescriÃ§Ã£o do que serÃ¡ aprendido",
-      "duration_hours": 0,
-      "prerequisites": [],
-      "resources": ["link ou nome do recurso"],
-      "exercises": ["descriÃ§Ã£o do exercÃ¬cio"]
-    }}
-  ]
-}}
-```
+        return [task]
 
-Importante:
-- Divida o tÃ³pico em subtÃ³picos lÃ³gicos
-- Estime horas realistas para cada subtÃ³pico
-- Inclua recursos gratuitos (docs, tutoriais, vÃ¬deos)
-- Inclua exercÃ¬cios prÃ¡ticos para cada tÃ³pico
-- Retorne APENAS o JSON, sem texto adicional"""
+    def _plan_update_task(self, issue: GitHubIssue) -> list[Task]:
+        """Planeja task de atualizacao."""
+        task = Task(
+            title=f"Atualizar: {issue.title}",
+            description=issue.body or "",
+            files_to_create=[],
+            files_to_modify=[],
+            tests_needed=[],
+            priority=2,
+        )
 
-        messages = [
-            ChatMessage(role="system", content="VocÃª ÃƒÂ© um professor especialista em criar planos de estudo. Retorne APENAS JSON vÃ¡lido."),
-            ChatMessage(role="user", content=prompt),
-        ]
+        return [task]
 
-        try:
-            response = self.orchestrator.chat(messages, model=self.model)
+    def _plan_test_task(self, issue: GitHubIssue) -> list[Task]:
+        """Planeja task de teste."""
+        task = Task(
+            title=f"Testar: {issue.title}",
+            description=issue.body or "",
+            files_to_create=[],
+            files_to_modify=[],
+            tests_needed=["tests/"],
+            priority=3,
+        )
 
-            # Extrai JSON da resposta
-            plan_json = self._extract_json(response)
-            plan_data = json.loads(plan_json)
+        return [task]
 
-            # Converte para StudyPlan
-            topics = [
-                StudyTopic(
-                    name=t.get("name", ""),
-                    description=t.get("description", ""),
-                    duration_hours=t.get("duration_hours", 0),
-                    prerequisites=t.get("prerequisites", []),
-                    resources=t.get("resources", []),
-                    exercises=t.get("exercises", []),
-                )
-                for t in plan_data.get("topics", [])
-            ]
+    def _plan_generic_task(self, issue: GitHubIssue) -> list[Task]:
+        """Planeja task generica."""
+        task = Task(
+            title=f"Implementar: {issue.title}",
+            description=issue.body or "",
+            files_to_create=[],
+            files_to_modify=[],
+            tests_needed=[],
+            priority=1,
+        )
 
-            plan = StudyPlan(
-                topic=plan_data.get("topic", topic),
-                level=plan_data.get("level", level),
-                objective=plan_data.get("objective", objective),
-                total_hours=plan_data.get("total_hours", sum(t.duration_hours for t in topics)),
-                topics=topics,
-            )
-
-            self.logger.info(f"Study plan created: {len(topics)} topics, {plan.total_hours} hours total")
-
-            return plan
-
-        except Exception as e:
-            self.logger.error(f"Error creating study plan: {e}")
-            raise
-
-    def _extract_json(self, text: str) -> str:
-        """Extrai JSON de texto (remove markdown code blocks)."""
-        import re
-
-        # Remove code blocks markdown
-        match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
-        if match:
-            return match.group(1).strip()
-
-        # Tenta achar JSON direto
-        match = re.search(r"\{[\s\S]*\}", text)
-        if match:
-            return match.group(0).strip()
-
-        # Retorna texto original
-        return text.strip()
-
-    def generate_schedule(
-        self,
-        plan: StudyPlan,
-        start_date: Optional[datetime] = None,
-        hours_per_day: int = 2,
-    ) -> list[dict]:
-        """Gera cronograma de estudos.
-
-        Args:
-            plan: Plano de estudo
-            start_date: Data de inÃ¬cio
-            hours_per_day: Horas por dia
-
-        Returns:
-            Lista de sessÃµes de estudo
-        """
-        start_date = start_date or datetime.now()
-        schedule = []
-
-        current_date = start_date
-        for topic in plan.topics:
-            days_needed = max(1, topic.duration_hours // hours_per_day)
-
-            for day in range(days_needed):
-                session = {
-                    "date": current_date.strftime("%Y-%m-%d"),
-                    "topic": topic.name,
-                    "description": topic.description,
-                    "duration_hours": min(hours_per_day, topic.duration_hours - day * hours_per_day),
-                    "exercises": topic.exercises[:2] if topic.exercises else [],
-                    "completed": False,
-                }
-                schedule.append(session)
-                current_date += timedelta(days=1)
-
-        self.logger.info(f"Schedule generated: {len(schedule)} sessions")
-
-        return schedule
-
-
-def main():
-    """Teste do planner."""
-    from .orchestrator import BastiaoOrchestrator
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
-
-    orchestrator = BastiaoOrchestrator()
-    planner = StudyPlanner(orchestrator, model="auto/best-fast")
-
-    # Cria plano
-    print("Creating study plan for Python...")
-    plan = planner.create_plan(
-        topic="Python",
-        level="iniciante",
-        objective="Aprender Python para anÃ¡lise de dados",
-        hours_per_day=2,
-    )
-
-    print(f"\nPlano criado: {plan.topic}")
-    print(f"Total de tÃ³picos: {len(plan.topics)}")
-    print(f"Total de horas: {plan.total_hours}")
-
-    print("\nTÃ³picos:")
-    for i, topic in enumerate(plan.topics[:5], 1):
-        print(f"  {i}. {topic.name} ({topic.duration_hours}h)")
-
-    # Gera cronograma
-    print("\nGenerating schedule...")
-    schedule = planner.generate_schedule(plan, hours_per_day=2)
-
-    print(f"\nCronograma: {len(schedule)} sessÃµes")
-    for session in schedule[:5]:
-        print(f"  - {session['date']}: {session['topic']} ({session['duration_hours']}h)")
+        return [task]
 
 
 if __name__ == "__main__":
-    main()
+    # Teste
+    from .github_client import GitHubIssue
+
+    issue = GitHubIssue(
+        number=1,
+        title="Criar modulo orchestrator",
+        body="Criar orchestrator.py",
+        labels=["enhancement"],
+        state="open",
+    )
+
+    planner = Planner()
+    tasks = planner.plan_issue(issue)
+
+    print(f"Tasks: {len(tasks)}")
+    for task in tasks:
+        print(f"  - {task.title}")
+        print(f"    Files to create: {task.files_to_create}")
