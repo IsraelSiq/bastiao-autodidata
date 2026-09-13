@@ -13,7 +13,7 @@ class OmniRouteModel:
 
     def __init__(
         self,
-        base_url: str = "http://localhost:20128",
+        base_url: str = "http://192.168.0.6:20128",
         model: str = "auto/best-fast",
         api_key: Optional[str] = None,
     ):
