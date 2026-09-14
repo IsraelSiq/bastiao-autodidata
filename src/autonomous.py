@@ -9,6 +9,8 @@ from .swe_agent import SWEAgent
 from .env import SandboxEnv
 from .github_client import GitHubClient
 from .model import OmniRouteModel
+from .planner import Planner
+from .task_state import create_task_state
 
 
 class AutonomousRunner:
@@ -22,6 +24,8 @@ class AutonomousRunner:
             os.environ["GITHUB_TOKEN"],
         )
         self.max_iterations = int(os.getenv("BASTIAO_MAX_ITERATIONS", "20"))
+        self.planner = Planner()
+        self.state_dir = os.getenv("BASTIAO_STATE_DIR", str(self.workspace / ".bastiao" / "tasks"))
 
     def _git(self, *args: str) -> str:
         result = subprocess.run(
@@ -147,19 +151,33 @@ class AutonomousRunner:
             self._git("fetch", "origin", "main")
             self._git("checkout", "-B", branch, "origin/main")
             self.client.create_branch(branch)
+            plan = self.planner.build_issue_plan(issue)
+            state = create_task_state(plan)
+            state.start_step()
+            state.save(self.state_dir)
 
             agent = SWEAgent(
                 model=OmniRouteModel(),
                 env=SandboxEnv(str(self.workspace)),
                 max_iterations=self.max_iterations,
             )
-            solved = agent.solve(issue.title, issue.body or "")
+            solved = agent.solve(
+                issue.title,
+                issue.body or "",
+                plan="\n".join(
+                    f"{step.id}: {step.title} ({step.action})" for step in plan.steps
+                ),
+            )
             files = self._changed_files() if solved else []
             if not solved or not files:
+                state.fail("agent did not produce a patch")
+                state.save(self.state_dir)
                 self.client.add_comment(issue.number, "Bastiao could not produce a tested patch.")
                 return {"issue": issue.number, "status": "failed", "files": 0}
 
             if not self._has_in_scope_diff(issue.title, issue.body or "", files):
+                state.fail("patch is outside issue scope")
+                state.save(self.state_dir)
                 self.client.add_comment(
                     issue.number,
                     "Bastiao rejected the patch because it modified files outside the explicit scope of the issue.",
@@ -167,7 +185,11 @@ class AutonomousRunner:
                 return {"issue": issue.number, "status": "rejected_out_of_scope", "files": len(files)}
 
             self._run_tests()
+            state.complete_step()
+            state.save(self.state_dir)
             if not self._has_safe_diff():
+                state.fail("unsafe diff")
+                state.save(self.state_dir)
                 self.client.add_comment(
                     issue.number,
                     "Bastiao rejected the generated patch because it replaced too much existing code.",
@@ -185,5 +207,7 @@ class AutonomousRunner:
                 "Tests were executed in the isolated workspace before opening this PR.",
             )
             self.client.add_comment(issue.number, f"Implemented in PR: {pr_url}")
+            state.complete()
+            state.save(self.state_dir)
             return {"issue": issue.number, "status": "pull_request_opened", "files": len(files), "pr": pr_url}
         return {"status": "no_open_issues", "skipped": sorted(skipped)}

@@ -67,7 +67,7 @@ Current task:"""
 
         logger.info("SWEAgent initialized")
 
-    def solve(self, issue_title: str, issue_body: str = "") -> bool:
+    def solve(self, issue_title: str, issue_body: str = "", plan: str = "") -> bool:
         """Tenta resolver uma issue.
 
         Args:
@@ -86,6 +86,9 @@ Current task:"""
         user_prompt = f"""Issue: {issue_title}
 
 Description: {issue_body or 'No description'}
+
+Structured plan:
+{plan or 'Follow inspect, implement, verify, and review steps.'}
 
 Task: Fix this issue.
 
@@ -153,7 +156,7 @@ Say 'DONE' if finished."""
 
             # 5. Checa se terminou
             if "DONE" in response.upper() or "FINISHED" in response.upper():
-                logger.info("Agent finished")
+                logger.info("Agent finished; external quality gates must still pass")
                 return True
 
         logger.warning("Max iterations reached")
