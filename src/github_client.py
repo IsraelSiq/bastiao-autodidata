@@ -240,6 +240,43 @@ class GitHubClient:
         # Atualiza ref
         self.session.patch(ref_url, json={"sha": new_commit_sha})
 
+    def create_branch(self, branch: str, from_branch: str = "main"):
+        """Create a branch from the current tip of another branch."""
+        existing_url = (
+            f"{self.base_url}/repos/{self.owner}/{self.repo}/git/ref/heads/{branch}"
+        )
+        existing = self.session.get(existing_url)
+        if existing.status_code == 200:
+            return
+        if existing.status_code != 404:
+            existing.raise_for_status()
+        ref_url = f"{self.base_url}/repos/{self.owner}/{self.repo}/git/refs/heads/{from_branch}"
+        ref_response = self.session.get(ref_url)
+        ref_response.raise_for_status()
+        response = self.session.post(
+            f"{self.base_url}/repos/{self.owner}/{self.repo}/git/refs",
+            json={"ref": f"refs/heads/{branch}", "sha": ref_response.json()["object"]["sha"]},
+        )
+        response.raise_for_status()
+
+    def create_pull_request(self, branch: str, title: str, body: str, base: str = "main") -> str:
+        """Open a pull request for a branch and return its URL."""
+        response = self.session.post(
+            f"{self.base_url}/repos/{self.owner}/{self.repo}/pulls",
+            json={"title": title, "body": body, "head": branch, "base": base},
+        )
+        response.raise_for_status()
+        return response.json()["html_url"]
+
+    def has_pull_request_for_branch(self, branch: str) -> bool:
+        """Return whether GitHub already has an open or closed PR for a branch."""
+        response = self.session.get(
+            f"{self.base_url}/repos/{self.owner}/{self.repo}/pulls",
+            params={"state": "all", "head": f"{self.owner}:{branch}", "per_page": 1},
+        )
+        response.raise_for_status()
+        return bool(response.json())
+
 
 if __name__ == "__main__":
     # Teste

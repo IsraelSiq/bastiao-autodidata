@@ -4,7 +4,7 @@ Ferramentas que o agente pode usar.
 """
 
 import subprocess
-import os
+import shlex
 from pathlib import Path
 from typing import Optional
 
@@ -18,7 +18,17 @@ class ToolHandler:
         Args:
             repo_path: Caminho do repositorio
         """
-        self.repo_path = Path(repo_path)
+        self.repo_path = Path(repo_path).resolve()
+
+    def _safe_path(self, path: str) -> Path:
+        """Resolve a repository-relative path without allowing traversal."""
+        candidate = Path(path)
+        if candidate.is_absolute():
+            raise ValueError("absolute paths are not allowed")
+        resolved = (self.repo_path / candidate).resolve()
+        if resolved != self.repo_path and self.repo_path not in resolved.parents:
+            raise ValueError("path escapes repository root")
+        return resolved
 
     def execute(self, action: str) -> str:
         """Executa uma acao.
@@ -58,7 +68,10 @@ class ToolHandler:
         Returns:
             Conteudo do arquivo
         """
-        filepath = self.repo_path / path
+        try:
+            filepath = self._safe_path(path)
+        except ValueError as error:
+            return f"ERROR: {error}"
         if not filepath.exists():
             return f"ERROR: File not found: {path}"
 
@@ -84,7 +97,10 @@ class ToolHandler:
         path = parts[0]
         content = parts[1]
 
-        filepath = self.repo_path / path
+        try:
+            filepath = self._safe_path(path)
+        except ValueError as error:
+            return f"ERROR: {error}"
         filepath.parent.mkdir(parents=True, exist_ok=True)
 
         with open(filepath, "w", encoding="utf-8") as f:
@@ -101,26 +117,35 @@ class ToolHandler:
         Returns:
             Output
         """
+        allowed = {
+            "pytest",
+            "python",
+            "python3",
+            "git",
+            "npm",
+            "node",
+        }
+        try:
+            argv = shlex.split(command)
+        except ValueError as error:
+            return f"ERROR: Invalid command: {error}"
+        if not argv or argv[0] not in allowed:
+            return f"ERROR: Command not allowed: {argv[0] if argv else '(empty)'}"
         try:
             result = subprocess.run(
-                command,
-                shell=True,
+                argv,
                 capture_output=True,
                 text=True,
                 timeout=60,
                 cwd=str(self.repo_path),
+                check=False,
             )
-
             output = result.stdout
             if result.stderr:
                 output += "\nSTDERR: " + result.stderr
-
             return output or f"Command exited with code {result.returncode}"
-
         except subprocess.TimeoutExpired:
             return "ERROR: Timeout (60s)"
-        except Exception as e:
-            return f"ERROR: {e}"
 
     def search_code(self, pattern: str) -> str:
         """Busca no codigo.
@@ -133,10 +158,11 @@ class ToolHandler:
         """
         try:
             result = subprocess.run(
-                ["grep", "-r", "--include=*.py", pattern, str(self.repo_path)],
+                ["grep", "-r", "--include=*.py", pattern, "."],
                 capture_output=True,
                 text=True,
                 timeout=30,
+                cwd=str(self.repo_path),
             )
 
             return result.stdout or "No matches found"
@@ -153,7 +179,10 @@ class ToolHandler:
         Returns:
             Lista de arquivos
         """
-        dirpath = self.repo_path / path if path else self.repo_path
+        try:
+            dirpath = self._safe_path(path) if path else self.repo_path
+        except ValueError as error:
+            return f"ERROR: {error}"
 
         if not dirpath.exists():
             return f"ERROR: Directory not found: {path}"

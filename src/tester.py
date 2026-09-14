@@ -5,6 +5,7 @@ Roda testes do codigo gerado.
 
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -22,13 +23,14 @@ class TestResult:
 class Tester:
     """Roda testes."""
 
-    def __init__(self, test_dir: str = "tests"):
+    def __init__(self, test_dir: str = "tests", repo_path: str = "."):
         """Inicializa o tester.
 
         Args:
             test_dir: Diretorio de testes
         """
         self.test_dir = Path(test_dir)
+        self.repo_path = Path(repo_path)
 
     def run_tests(self, files: list[CodeFile]) -> list[TestResult]:
         """Roda testes dos arquivos.
@@ -62,6 +64,7 @@ class Tester:
                 capture_output=True,
                 text=True,
                 timeout=60,
+                cwd=str(self.repo_path),
             )
 
             return TestResult(

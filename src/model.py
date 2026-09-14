@@ -13,8 +13,8 @@ class OmniRouteModel:
 
     def __init__(
         self,
-        base_url: str = "http://192.168.0.6:20128",
-        model: str = "auto/best-fast",
+        base_url: Optional[str] = None,
+        model: Optional[str] = None,
         api_key: Optional[str] = None,
     ):
         """Inicializa o modelo.
@@ -24,8 +24,10 @@ class OmniRouteModel:
             model: Nome do modelo
             api_key: API key (opcional)
         """
-        self.base_url = base_url.rstrip("/")
-        self.model = model
+        self.base_url = (
+            base_url or os.getenv("OMNIROUTE_URL", "http://127.0.0.1:11434/v1")
+        ).rstrip("/")
+        self.model = model or os.getenv("BASTIAO_MODEL", "llama3.2:3b")
         self.api_key = api_key or os.getenv("OMNIROUTE_API_KEY", "")
 
         self.session = requests.Session()
@@ -48,7 +50,11 @@ class OmniRouteModel:
         Returns:
             Resposta do modelo
         """
-        url = f"{self.base_url}/v1/chat/completions"
+        url = (
+            f"{self.base_url}/chat/completions"
+            if self.base_url.endswith("/v1")
+            else f"{self.base_url}/v1/chat/completions"
+        )
 
         payload = {
             "model": self.model,
@@ -60,7 +66,7 @@ class OmniRouteModel:
             "temperature": 0.7,
         }
 
-        response = self.session.post(url, json=payload)
+        response = self.session.post(url, json=payload, timeout=120)
         response.raise_for_status()
 
         data = response.json()

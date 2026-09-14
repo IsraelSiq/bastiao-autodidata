@@ -1,6 +1,21 @@
 version: '3.8'
 
 services:
+  bastiao:
+    build: .
+    container_name: bastiao-autodidata
+    profiles: ["agent"]
+    env_file:
+      - .env
+    environment:
+      BASTIAO_WORKSPACE: /workspace/target
+      OMNIROUTE_URL: http://ollama:11434/v1
+    volumes:
+      - ./workspace:/workspace/target
+    depends_on:
+      - ollama
+    restart: on-failure:3
+
   ollama:
     image: ollama/ollama:latest
     container_name: bastiao-ollama

@@ -7,6 +7,7 @@ import sys
 import io
 import traceback
 import json
+import shlex
 from typing import Any, Optional
 from dataclasses import dataclass
 from contextlib import contextmanager
@@ -134,7 +135,7 @@ class PythonSandbox:
 class ShellSandbox:
     """Sandbox para execuÃ§Ã£o de comandos shell (bÃ¡sico)."""
 
-    def __init__(self, allowed_commands: Optional[list[str]] = None):
+    def __init__(self, allowed_commands: Optional[list[str]] = None, timeout: int = 30):
         """Inicializa a sandbox.
 
         Args:
@@ -144,17 +145,15 @@ class ShellSandbox:
             "ls", "cat", "head", "tail", "wc",
             "grep", "find", "pwd", "echo",
         ]
+        self.timeout = timeout
 
     def is_safe(self, command: str) -> bool:
         """Verifica se comando ÃƒÂ© seguro."""
-        # Comandos proibidos
-        forbidden = ["rm", "sudo", "chmod", "chown", "kill", "curl", "wget"]
-
-        for cmd in forbidden:
-            if cmd in command.split():
-                return False
-
-        return True
+        try:
+            argv = shlex.split(command)
+        except ValueError:
+            return False
+        return bool(argv) and argv[0] in self.allowed_commands
 
     def execute(self, command: str) -> ExecutionResult:
         """Executa comando shell.
@@ -179,8 +178,8 @@ class ShellSandbox:
 
         try:
             result = subprocess.run(
-                command,
-                shell=True,
+                shlex.split(command),
+                shell=False,
                 capture_output=True,
                 text=True,
                 timeout=self.timeout,
