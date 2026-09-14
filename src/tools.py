@@ -74,6 +74,8 @@ class ToolHandler:
             return f"ERROR: {error}"
         if not filepath.exists():
             return f"ERROR: File not found: {path}"
+        if not filepath.is_file():
+            return f"ERROR: Not a file: {path}"
 
         with open(filepath, "r", encoding="utf-8") as f:
             return f.read()
@@ -131,6 +133,10 @@ class ToolHandler:
             return f"ERROR: Invalid command: {error}"
         if not argv or argv[0] not in allowed:
             return f"ERROR: Command not allowed: {argv[0] if argv else '(empty)'}"
+        if argv[0] == "git":
+            allowed_git_actions = {"status", "diff", "log", "show", "ls-files"}
+            if len(argv) < 2 or argv[1] not in allowed_git_actions:
+                return f"ERROR: Git action not allowed: {argv[1] if len(argv) > 1 else '(empty)'}"
         try:
             result = subprocess.run(
                 argv,

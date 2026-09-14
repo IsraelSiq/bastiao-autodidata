@@ -13,3 +13,15 @@ def test_tool_handler_rejects_path_traversal(tmp_path: Path):
 def test_tool_handler_rejects_unapproved_commands(tmp_path: Path):
     handler = ToolHandler(str(tmp_path))
     assert "Command not allowed" in handler.run_command("sh -c 'echo unsafe'")
+
+
+def test_tool_handler_rejects_mutating_git_commands(tmp_path: Path):
+    handler = ToolHandler(str(tmp_path))
+    assert "Git action not allowed" in handler.run_command("git init")
+    assert "Git action not allowed" in handler.run_command("git push origin main")
+
+
+def test_tool_handler_rejects_reading_directories(tmp_path: Path):
+    handler = ToolHandler(str(tmp_path))
+    (tmp_path / "src").mkdir()
+    assert "Not a file" in handler.read_file("src")
