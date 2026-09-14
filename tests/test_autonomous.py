@@ -25,11 +25,22 @@ def test_issue_scope_accepts_explicit_target_file():
     )
 
 
-def test_issue_scope_allows_issues_without_explicit_paths():
+def test_issue_scope_allows_issues_without_explicit_paths(tmp_path):
     runner = AutonomousRunner.__new__(AutonomousRunner)
+    runner.workspace = tmp_path
     files = [{"path": "src/planner.py", "content": "def plan():\n    pass\n"}]
 
     assert runner._has_in_scope_diff("Improve planner", "Refactor the planner.", files)
+
+
+def test_issue_scope_rejects_unmentioned_existing_file(tmp_path):
+    runner = AutonomousRunner.__new__(AutonomousRunner)
+    runner.workspace = tmp_path
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "logging_config.py").write_text("import logging\n")
+    files = [{"path": "src/logging_config.py", "content": "import logging\n"}]
+
+    assert not runner._has_in_scope_diff("Create memory pipeline", "Add persistent memory.", files)
 
 
 def test_github_client_branch_attempt_detection():

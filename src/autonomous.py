@@ -116,6 +116,12 @@ class AutonomousRunner:
             return False
         if issue_paths and not changed.intersection(issue_paths):
             return False
+        if not issue_paths:
+            issue_text = f"{title}\n{body}".lower()
+            for path in changed:
+                existing = (self.workspace / path).exists()
+                if existing and path.lower() not in issue_text and Path(path).name.lower() not in issue_text:
+                    return False
         return True
 
     def run_once(self) -> dict:

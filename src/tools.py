@@ -137,6 +137,12 @@ class ToolHandler:
             allowed_git_actions = {"status", "diff", "log", "show", "ls-files"}
             if len(argv) < 2 or argv[1] not in allowed_git_actions:
                 return f"ERROR: Git action not allowed: {argv[1] if len(argv) > 1 else '(empty)'}"
+        if (
+            argv[0] in {"pip", "pip3"}
+            or (argv[0] in {"python", "python3"} and len(argv) > 2 and argv[1:3] == ["-m", "pip"])
+            or (argv[0] == "npm" and len(argv) > 1 and argv[1] in {"install", "ci", "update"})
+        ):
+            return "ERROR: Package installation is not allowed during an autonomous task"
         try:
             result = subprocess.run(
                 argv,
