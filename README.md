@@ -103,11 +103,17 @@ As variaveis documentadas em `.env.example` sao:
 | `BASTIAO_MAX_ISSUES` | nao | `1` | Maximo de issues por ciclo |
 | `BASTIAO_MAX_ITERATIONS` | nao | `20` | Iteracoes do SWE-agent por issue |
 | `BASTIAO_INTERVAL_SECONDS` | nao | `3600` | Intervalo entre ciclos; minimo efetivo de 300 segundos |
+| `BASTIAO_ISSUE_NUMBERS` | nao | vazio | Lista separada por virgulas para limitar issues |
+| `BASTIAO_RETRY_ISSUES` | nao | `false` | Permite retry de issues que ja possuem PR |
 | `OMNIROUTE_URL` | nao | `http://127.0.0.1:11434/v1` | Base URL da API de chat |
 | `OMNIROUTE_API_KEY` | nao | vazio | Chave opcional para o endpoint |
 
 Dentro do Compose, `BASTIAO_WORKSPACE` e `OMNIROUTE_URL` sao definidos pelo
 servico para `/workspace/target` e `http://ollama:11434/v1`.
+
+Para iniciar pelo roadmap em uma issue especifica, use por exemplo
+`BASTIAO_ISSUE_NUMBERS=29`. O agente ignora automaticamente branches que ja
+possuem uma pull request, a menos que `BASTIAO_RETRY_ISSUES=true`.
 
 ## Seguranca e limites
 
