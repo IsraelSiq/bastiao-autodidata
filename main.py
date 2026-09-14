@@ -16,9 +16,9 @@ O Bastiao vai:
 
 import os
 import logging
+import time
 
-from src.swe_agent import SWEAgent
-from src.github_client import GitHubClient
+from src.autonomous import AutonomousRunner
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,58 +28,24 @@ logging.basicConfig(
 
 def main():
     """Main function."""
-    owner = "IsraelSiq"
-    repo = "bastiao-autodidata"
-    token = os.getenv("GITHUB_TOKEN")
-
-    if not token:
-        print("ERROR: GITHUB_TOKEN not set!")
-        print("Please set GITHUB_TOKEN environment variable.")
+    required = ["GITHUB_TOKEN", "GITHUB_OWNER", "GITHUB_REPO", "BASTIAO_WORKSPACE"]
+    missing = [name for name in required if not os.getenv(name)]
+    if missing:
+        print(f"ERROR: missing environment variables: {', '.join(missing)}")
         return
 
     print("="*60)
     print("BASTIAO AUTODIDATA - SWE-agent Implementation")
     print("="*60)
-    print(f"\nRepository: {owner}/{repo}")
+    print(f"\nRepository: {os.environ['GITHUB_OWNER']}/{os.environ['GITHUB_REPO']}")
     print("\nStarting autonomous development...\n")
 
-    # Inicializa
-    client = GitHubClient(owner, repo, token)
-    agent = SWEAgent()
-
-    # Le issues abertas
-    issues = client.list_issues(state="open")
-    print(f"Found {len(issues)} open issues\n")
-
-    # Processa cada issue
-    for issue in issues[:5]:  # Limita a 5 issues
-        print(f"\n{'='*60}")
-        print(f"Processing issue #{issue.number}: {issue.title}")
-        print(f"{'='*60}\n")
-
-        # Tenta resolver
-        success = agent.solve(
-            issue_title=issue.title,
-            issue_body=issue.body or "",
-        )
-
-        # Comenta na issue
-        if success:
-            client.add_comment(
-                issue.number,
-                f"✅ Implemented by Bastiao (SWE-agent)!",
-            )
-            print(f"Issue #{issue.number} solved!")
-        else:
-            client.add_comment(
-                issue.number,
-                f"❌ Failed to solve. Needs human help.",
-            )
-            print(f"Issue #{issue.number} failed.")
-
-    print("\n" + "="*60)
-    print("Development cycle complete!")
-    print("="*60)
+    interval = max(300, int(os.getenv("BASTIAO_INTERVAL_SECONDS", "3600")))
+    runner = AutonomousRunner(os.environ["BASTIAO_WORKSPACE"])
+    while True:
+        result = runner.run_once()
+        print(f"Cycle complete: {result}")
+        time.sleep(interval)
 
 
 if __name__ == "__main__":
