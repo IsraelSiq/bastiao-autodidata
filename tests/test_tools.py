@@ -31,3 +31,12 @@ def test_tool_handler_rejects_package_installation(tmp_path: Path):
     handler = ToolHandler(str(tmp_path))
     assert "Package installation is not allowed" in handler.run_command("python -m pip install astroid")
     assert "Package installation is not allowed" in handler.run_command("npm install requests")
+
+
+def test_tool_handler_enforces_planner_scope(tmp_path: Path):
+    handler = ToolHandler(str(tmp_path), allowed_paths=["src/allowed.py"])
+
+    assert "Path is outside the planner scope" in handler.write_file(
+        "src/other.py value"
+    )
+    assert handler.write_file("src/allowed.py value") == "OK: Wrote src/allowed.py"

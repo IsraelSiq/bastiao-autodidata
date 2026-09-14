@@ -29,6 +29,7 @@ AVAILABLE ACTIONS:
 - run <command>: Run a shell command
 - search <pattern>: Search code
 - list [path]: List files
+- complete: Mark the current plan as complete after verification
 
 RESPONSE FORMAT:
 You MUST respond with ONLY actions, one per line. NO explanations.
@@ -43,7 +44,7 @@ RULES:
 1. ALWAYS use actions, never explanations
 2. Read files before editing
 3. Test changes with 'run'
-4. Say 'DONE' when finished
+4. Emit 'complete' only after verification succeeds
 
 Current task:"""
 
@@ -152,10 +153,10 @@ Current state:
 {self._format_state()}
 
 What's your next action? Respond with actions ONLY.
-Say 'DONE' if finished."""
+Emit 'complete' if the verified plan is finished."""
 
-            # 5. Checa se terminou
-            if "DONE" in response.upper() or "FINISHED" in response.upper():
+            # Completion is an explicit parsed action, not free-form model text.
+            if any(action.strip().lower() == "complete" for action in actions):
                 logger.info("Agent finished; external quality gates must still pass")
                 return True
 
@@ -181,7 +182,10 @@ Say 'DONE' if finished."""
             for match in matches:
                 for line in match.splitlines():
                     line = line.strip()
-                    if line and any(line.startswith(cmd) for cmd in ["read", "write", "run", "search", "list", "DONE", "FINISHED"]):
+                    if line and (
+                        line.lower() == "complete"
+                        or any(line.startswith(cmd) for cmd in ["read", "write", "run", "search", "list"])
+                    ):
                         actions.append(line)
             if actions:
                 return actions
@@ -190,7 +194,9 @@ Say 'DONE' if finished."""
         actions = []
         for line in response.splitlines():
             line = line.strip()
-            if line and any(line.startswith(cmd) for cmd in ["read", "write", "run", "search", "list"]):
+            if line.lower() == "complete" or any(
+                line.startswith(cmd) for cmd in ["read", "write", "run", "search", "list"]
+            ):
                 actions.append(line)
 
         return actions

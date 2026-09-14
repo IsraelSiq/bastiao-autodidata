@@ -13,10 +13,12 @@ class TaskExecutionState:
     """Tracks plan progress independently from model messages."""
 
     issue_number: int
+    plan: dict = field(default_factory=dict)
     status: str = "planned"
     current_step: int = 0
     attempts: int = 0
     error: str = ""
+    result: str = ""
     updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def start_step(self) -> None:
@@ -26,6 +28,11 @@ class TaskExecutionState:
 
     def complete_step(self) -> None:
         self.current_step += 1
+        self.updated_at = datetime.now(timezone.utc).isoformat()
+
+    def checkpoint(self, result: str = "") -> None:
+        """Persist the latest successful observation without advancing the plan."""
+        self.result = result
         self.updated_at = datetime.now(timezone.utc).isoformat()
 
     def complete(self) -> None:
@@ -49,4 +56,4 @@ class TaskExecutionState:
 
 
 def create_task_state(plan: IssuePlan) -> TaskExecutionState:
-    return TaskExecutionState(issue_number=plan.issue_number)
+    return TaskExecutionState(issue_number=plan.issue_number, plan=plan.to_dict())

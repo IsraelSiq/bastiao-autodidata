@@ -43,6 +43,27 @@ class IssuePlan:
     allowed_paths: list[str]
     steps: list[PlanStep]
 
+    def to_dict(self) -> dict:
+        """Serialize the plan for checkpoints and process restarts."""
+        return {
+            "issue_number": self.issue_number,
+            "title": self.title,
+            "acceptance_criteria": self.acceptance_criteria,
+            "allowed_paths": self.allowed_paths,
+            "steps": [step.__dict__.copy() for step in self.steps],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "IssuePlan":
+        """Restore a plan from a persisted checkpoint."""
+        return cls(
+            issue_number=int(data["issue_number"]),
+            title=data["title"],
+            acceptance_criteria=list(data.get("acceptance_criteria", [])),
+            allowed_paths=list(data.get("allowed_paths", [])),
+            steps=[PlanStep(**step) for step in data.get("steps", [])],
+        )
+
 
 class Planner:
     """Planeja tasks baseado em issues."""

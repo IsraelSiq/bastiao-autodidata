@@ -45,6 +45,23 @@ O ciclo retorna `no_open_issues`, `failed`, `rejected_unsafe_diff` ou
 `pull_request_opened`. Uma issue e processada por ciclo conforme
 `BASTIAO_MAX_ISSUES`.
 
+## Planner, Executor e estado
+
+Cada issue selecionada passa primeiro por `Planner.build_issue_plan()`, que
+produz critérios de aceitação, caminhos explicitamente mencionados e quatro
+passos verificáveis: `inspect`, `implement`, `verify` e `review`. O
+`SandboxEnv`/`ToolHandler` funciona como Executor: ações de escrita são
+rejeitadas quando o caminho não pertence ao plano, além das restrições gerais
+de comandos e caminhos.
+
+O `TaskExecutionState` é salvo em
+`.bastiao/tasks/issue-N.json` e contém o plano serializado, passo atual,
+tentativas, último resultado e erro. Esse checkpoint é atualizado antes de
+iniciar a execução, após a verificação e em falhas. Ele permite retomar o
+contexto essencial sem depender do histórico textual do modelo. A conclusão
+do SWE-agent exige a ação explícita `complete`; texto livre como `DONE` não
+encerra mais uma tarefa.
+
 ## Execucao local
 
 Requisitos: Python 3.12+, Git, acesso a um endpoint de chat compativel com

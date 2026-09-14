@@ -158,7 +158,7 @@ class AutonomousRunner:
 
             agent = SWEAgent(
                 model=OmniRouteModel(),
-                env=SandboxEnv(str(self.workspace)),
+                env=SandboxEnv(str(self.workspace), allowed_paths=plan.allowed_paths),
                 max_iterations=self.max_iterations,
             )
             solved = agent.solve(
@@ -186,6 +186,7 @@ class AutonomousRunner:
 
             self._run_tests()
             state.complete_step()
+            state.complete()
             state.save(self.state_dir)
             if not self._has_safe_diff():
                 state.fail("unsafe diff")

@@ -21,14 +21,14 @@ class EnvState:
 class SandboxEnv:
     """Ambiente sandbox do agente."""
 
-    def __init__(self, repo_path: str = "."):
+    def __init__(self, repo_path: str = ".", allowed_paths: Optional[list[str]] = None):
         """Inicializa o ambiente.
 
         Args:
             repo_path: Caminho do repositorio
         """
         self.repo_path = repo_path
-        self.tools = ToolHandler(repo_path)
+        self.tools = ToolHandler(repo_path, allowed_paths=allowed_paths)
         self.state = EnvState()
 
     def execute_action(self, action: str) -> str:
