@@ -242,7 +242,8 @@ Steps:
                 plan=(
                     self._format_plan(plan)
                     + f"\n\nResume checkpoint: step {state.current_step}, "
-                    f"attempt {state.attempts}. Last result: {state.result or 'none'}."
+                    f"attempt {state.attempts}. Last result: {state.result or 'none'}. "
+                    f"Previous error: {state.error or 'none'}."
                 ),
             )
             files = self._changed_files() if solved else []
@@ -276,6 +277,12 @@ Steps:
             if not review.approved:
                 state.fail("; ".join(review.reasons))
                 state.save(self.state_dir)
+                self.client.add_comment(
+                    issue.number,
+                    "Bastiao rejected the patch during review: "
+                    + "; ".join(review.reasons)
+                    + ". The next approved cycle can resume from the saved branch and checkpoint.",
+                )
                 return {"issue": issue.number, "status": "rejected_by_reviewer", "reasons": review.reasons}
             if not safe_diff:
                 state.fail("unsafe diff")
