@@ -22,6 +22,20 @@ def test_planner_builds_structured_steps_and_paths():
     assert restored.steps[1].action == "write only allowed files"
 
 
+def test_planner_extracts_paths_without_markdown_code_ticks():
+    issue = GitHubIssue(
+        number=43,
+        title="Add health marker",
+        body='Create the file src/health_marker.py with HEALTH_MARKER = "ok".',
+        labels=[],
+        state="open",
+    )
+
+    plan = Planner().build_issue_plan(issue)
+
+    assert plan.allowed_paths == ["src/health_marker.py"]
+
+
 def test_task_state_advances_and_persists(tmp_path):
     state = TaskExecutionState(issue_number=32)
     state.start_step()

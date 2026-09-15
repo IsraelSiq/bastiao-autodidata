@@ -61,7 +61,14 @@ class AutonomousRunner:
         return result.stdout.strip()
 
     def _changed_files(self) -> list[dict]:
-        paths = self._git("diff", "--name-only", "origin/main").splitlines()
+        tracked = self._git("diff", "--name-only", "origin/main").splitlines()
+        status = self._git("status", "--short", "--untracked-files=all").splitlines()
+        untracked = [
+            line[3:]
+            for line in status
+            if line.startswith("?? ") and line[3:]
+        ]
+        paths = list(dict.fromkeys(tracked + untracked))
         files = []
         for relative in paths:
             path = Path(relative)
@@ -242,7 +249,8 @@ Steps:
                 plan=(
                     self._format_plan(plan)
                     + f"\n\nResume checkpoint: step {state.current_step}, "
-                    f"attempt {state.attempts}. Last result: {state.result or 'none'}."
+                    f"attempt {state.attempts}. Last result: {state.result or 'none'}. "
+                    f"Previous error: {state.error or 'none'}."
                 ),
             )
             files = self._changed_files() if solved else []
@@ -276,6 +284,12 @@ Steps:
             if not review.approved:
                 state.fail("; ".join(review.reasons))
                 state.save(self.state_dir)
+                self.client.add_comment(
+                    issue.number,
+                    "Bastiao rejected the patch during review: "
+                    + "; ".join(review.reasons)
+                    + ". The next approved cycle can resume from the saved branch and checkpoint.",
+                )
                 return {"issue": issue.number, "status": "rejected_by_reviewer", "reasons": review.reasons}
             if not safe_diff:
                 state.fail("unsafe diff")

@@ -80,3 +80,45 @@ def test_format_plan_includes_scope_and_acceptance_criteria():
     assert "src/planner.py" in rendered
     assert "Add `src/planner.py`" in rendered
     assert "inspect:" in rendered
+
+
+def test_resume_prompt_includes_previous_error():
+    from src.planner import IssuePlan, PlanStep
+
+    plan = IssuePlan(
+        issue_number=43,
+        title="health marker",
+        acceptance_criteria=[],
+        allowed_paths=["src/health_marker.py"],
+        steps=[PlanStep("implement", "Implement", "write")],
+    )
+
+    runner = AutonomousRunner.__new__(AutonomousRunner)
+    runner._format_plan = AutonomousRunner._format_plan
+    rendered = runner._format_plan(plan)
+    rendered += (
+        "\n\nResume checkpoint: step 0, attempt 2. "
+        "Last result: none. Previous error: constant HEALTH_MARKER does not match issue requirement."
+    )
+
+    assert "Previous error: constant HEALTH_MARKER does not match issue requirement." in rendered
+
+
+def test_changed_files_includes_new_files(tmp_path):
+    runner = AutonomousRunner.__new__(AutonomousRunner)
+    runner.workspace = tmp_path
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "health_marker.py").write_text(
+        'HEALTH_MARKER = "ok"\n', encoding="utf-8"
+    )
+
+    runner._git = Mock(side_effect=[
+        "",
+        "?? src/health_marker.py",
+    ])
+
+    assert runner._changed_files() == [{
+        "path": "src/health_marker.py",
+        "content": 'HEALTH_MARKER = "ok"\n',
+    }]
