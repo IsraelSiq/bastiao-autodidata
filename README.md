@@ -117,6 +117,7 @@ As variaveis documentadas em `.env.example` sao:
 | `GITHUB_REPO` | sim | - | Nome do repositorio alvo |
 | `BASTIAO_WORKSPACE` | sim | - | Workspace isolado do repositorio alvo |
 | `BASTIAO_MODEL` | nao | `llama3.2:3b` | Modelo enviado ao endpoint |
+| `BASTIAO_TEMPERATURE` | nao | `0.2` | Temperatura das respostas do agente |
 | `BASTIAO_MAX_ISSUES` | nao | `1` | Maximo de issues por ciclo |
 | `BASTIAO_MAX_ITERATIONS` | nao | `20` | Iteracoes do SWE-agent por issue |
 | `BASTIAO_INTERVAL_SECONDS` | nao | `3600` | Intervalo entre ciclos; minimo efetivo de 300 segundos |

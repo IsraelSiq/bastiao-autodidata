@@ -5,13 +5,18 @@ import re
 import subprocess
 from pathlib import Path
 import requests
+import json
+import time
 
 from .swe_agent import SWEAgent
 from .env import SandboxEnv
 from .github_client import GitHubClient
 from .model import OmniRouteModel
-from .planner import Planner
+from .planner import IssuePlan, Planner
 from .task_state import create_task_state
+from .task_state import TaskExecutionState
+from .metrics import CycleMetrics
+from .reviewer import Reviewer
 
 
 class AutonomousRunner:
@@ -26,7 +31,24 @@ class AutonomousRunner:
         )
         self.max_iterations = int(os.getenv("BASTIAO_MAX_ITERATIONS", "20"))
         self.planner = Planner()
-        self.state_dir = os.getenv("BASTIAO_STATE_DIR", str(self.workspace / ".bastiao" / "tasks"))
+        self.state_root = Path(os.getenv("BASTIAO_STATE_DIR", "/var/lib/bastiao"))
+        self.state_dir = str(self.state_root / "tasks")
+        self.approval_file = Path(
+            os.getenv("BASTIAO_APPROVAL_FILE", str(self.state_root / "approvals.json"))
+        )
+        self.metrics = CycleMetrics(str(self.state_root / "metrics"))
+        self.reviewer = Reviewer()
+
+    def _is_approved(self, issue_number: int) -> bool:
+        if os.getenv("BASTIAO_REQUIRE_APPROVAL", "true").lower() != "true":
+            return True
+        try:
+            approvals = json.loads(self.approval_file.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return False
+        if not isinstance(approvals, list):
+            raise ValueError("approval file must contain a JSON list of issue numbers")
+        return issue_number in {int(value) for value in approvals}
 
     def _git(self, *args: str) -> str:
         result = subprocess.run(
@@ -147,6 +169,12 @@ Steps:
         return True
 
     def run_once(self) -> dict:
+        started = time.monotonic()
+        result = self._run_once()
+        self.metrics.record(result, time.monotonic() - started)
+        return result
+
+    def _run_once(self) -> dict:
         try:
             issues = self.client.list_issues(state="open")
         except requests.RequestException as error:
@@ -179,12 +207,27 @@ Steps:
                     }
             if processed >= int(os.getenv("BASTIAO_MAX_ISSUES", "1")):
                 break
+            if not self._is_approved(issue.number):
+                skipped.add(issue.number)
+                return {"issue": issue.number, "status": "pending_approval"}
             processed += 1
             self._git("fetch", "origin", "main")
-            self._git("checkout", "-B", branch, "origin/main")
+            state_path = self.state_root / "tasks" / f"issue-{issue.number}.json"
+            state = None
+            if state_path.exists():
+                state = TaskExecutionState.load(str(state_path))
+            if state and state.status in {"failed", "running"} and state.branch == branch:
+                self._git("checkout", branch)
+                plan = IssuePlan.from_dict(state.plan)
+            else:
+                self._git("checkout", "-B", branch, "origin/main")
+                plan = self.planner.build_issue_plan(issue)
+                state = create_task_state(plan)
+                state.branch = branch
+            if state is None:
+                state = create_task_state(plan)
+                state.branch = branch
             self.client.create_branch(branch)
-            plan = self.planner.build_issue_plan(issue)
-            state = create_task_state(plan)
             state.start_step()
             state.save(self.state_dir)
 
@@ -196,7 +239,11 @@ Steps:
             solved = agent.solve(
                 issue.title,
                 issue.body or "",
-                plan=self._format_plan(plan),
+                plan=(
+                    self._format_plan(plan)
+                    + f"\n\nResume checkpoint: step {state.current_step}, "
+                    f"attempt {state.attempts}. Last result: {state.result or 'none'}."
+                ),
             )
             files = self._changed_files() if solved else []
             if not solved or not files:
@@ -205,7 +252,8 @@ Steps:
                 self.client.add_comment(issue.number, "Bastiao could not produce a tested patch.")
                 return {"issue": issue.number, "status": "failed", "files": 0}
 
-            if not self._has_in_scope_diff(issue.title, issue.body or "", files):
+            in_scope = self._has_in_scope_diff(issue.title, issue.body or "", files)
+            if not in_scope:
                 state.fail("patch is outside issue scope")
                 state.save(self.state_dir)
                 self.client.add_comment(
@@ -216,9 +264,20 @@ Steps:
 
             self._run_tests()
             state.complete_step()
-            state.complete()
             state.save(self.state_dir)
-            if not self._has_safe_diff():
+            safe_diff = self._has_safe_diff()
+            review = self.reviewer.review(
+                files,
+                in_scope,
+                safe_diff,
+                issue_text=f"{issue.title}\n{issue.body or ''}",
+                workspace=str(self.workspace),
+            )
+            if not review.approved:
+                state.fail("; ".join(review.reasons))
+                state.save(self.state_dir)
+                return {"issue": issue.number, "status": "rejected_by_reviewer", "reasons": review.reasons}
+            if not safe_diff:
                 state.fail("unsafe diff")
                 state.save(self.state_dir)
                 self.client.add_comment(

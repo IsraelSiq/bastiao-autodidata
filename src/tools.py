@@ -59,6 +59,8 @@ class ToolHandler:
             return self.search_code(args)
         elif command == "list":
             return self.list_files(args)
+        elif command == "complete" and not args:
+            return "OK: Completion requested"
         else:
             return f"ERROR: Unknown command '{command}'"
 
