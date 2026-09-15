@@ -86,6 +86,18 @@ Adicionar timeout por comando, limites de processos, memoria, CPU, arquivos
 temporarios e tamanho de saida. O encerramento deve ser limpo, observavel e
 testado. Isolamento de kernel completo fica fora desta etapa.
 
+Implementacao parcial entregue nesta fase:
+
+- timeout configuravel por comando;
+- limite de comandos por tarefa;
+- limite de saida capturada;
+- limite de bytes por arquivo escrito;
+- falhas de limite retornam erro explicito e impedem conclusao/publicacao.
+
+CPU, memoria, processos filhos e limpeza de temporarios continuam pendentes
+para uma segunda etapa da #30, pois exigem primitivas especificas do runtime ou
+do container.
+
 ### 4. Issue #37 — Observabilidade operacional
 
 Consolidar identificador por ciclo, metricas de latencia e consumo,

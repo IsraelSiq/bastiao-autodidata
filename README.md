@@ -142,6 +142,10 @@ As variaveis documentadas em `.env.example` sao:
 | `BASTIAO_RETRY_ISSUES` | nao | `false` | Permite retry de issues que ja possuem PR |
 | `BASTIAO_GITHUB_TIMEOUT_SECONDS` | nao | `20` | Timeout de cada requisicao a API do GitHub |
 | `BASTIAO_QUALITY_GATE_TIMEOUT_SECONDS` | nao | `120` | Timeout de cada comando do Quality Gate |
+| `BASTIAO_COMMAND_TIMEOUT_SECONDS` | nao | `60` | Timeout de cada comando do sandbox |
+| `BASTIAO_MAX_COMMANDS` | nao | `100` | Maximo de comandos por tarefa |
+| `BASTIAO_MAX_OUTPUT_CHARS` | nao | `10000` | Limite da saida capturada por comando |
+| `BASTIAO_MAX_WRITE_BYTES` | nao | `1000000` | Limite de bytes por arquivo escrito |
 | `BASTIAO_REQUIRE_APPROVAL` | nao | `true` | Exige aprovacao no arquivo persistente antes da execucao |
 | `BASTIAO_APPROVAL_FILE` | nao | `/var/lib/bastiao/approvals.json` | Arquivo JSON com issues aprovadas |
 | `BASTIAO_STATE_DIR` | nao | `/var/lib/bastiao` | Diretorio de checkpoints e metricas |
@@ -175,6 +179,9 @@ menos que `BASTIAO_RETRY_ISSUES=true`.
   duracao e timeout.
 - Qualquer falha ou timeout do Quality Gate impede a publicacao e gera o estado
   `quality_gate_failed`.
+- O sandbox limita timeout, quantidade de comandos, tamanho da saida capturada e
+  tamanho de cada arquivo escrito; ao atingir um limite, a acao falha sem
+  publicar uma PR.
 - O Reviewer valida caminhos, seguranca do diff, sintaxe Python e constantes
   explicitamente exigidas pela issue.
 - O modelo nao pode publicar commits diretamente; a publicacao usa a API do

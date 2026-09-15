@@ -26,6 +26,10 @@ class SandboxEnv:
         repo_path: str = ".",
         allowed_paths: Optional[list[str]] = None,
         strict_scope: bool = False,
+        command_timeout_seconds: int = 60,
+        max_output_chars: int = 10000,
+        max_commands: int = 100,
+        max_write_bytes: int = 1_000_000,
     ):
         """Inicializa o ambiente.
 
@@ -37,6 +41,10 @@ class SandboxEnv:
             repo_path,
             allowed_paths=allowed_paths,
             strict_scope=strict_scope,
+            command_timeout_seconds=command_timeout_seconds,
+            max_output_chars=max_output_chars,
+            max_commands=max_commands,
+            max_write_bytes=max_write_bytes,
         )
         self.state = EnvState()
 

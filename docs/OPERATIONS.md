@@ -108,6 +108,20 @@ modelo tentar escrever fora do escopo, a escrita e bloqueada e o SWE-agent
 aborta imediatamente a tarefa. Nenhuma recuperacao automatica ou publicacao
 ocorre depois dessa violacao.
 
+## Limites do sandbox
+
+Os limites operacionais sao configurados no `.env`:
+
+- `BASTIAO_COMMAND_TIMEOUT_SECONDS`: encerra comandos que excedem o tempo;
+- `BASTIAO_MAX_COMMANDS`: impede consumo indefinido de comandos por tarefa;
+- `BASTIAO_MAX_OUTPUT_CHARS`: trunca saidas capturadas;
+- `BASTIAO_MAX_WRITE_BYTES`: impede arquivos gerados excessivamente grandes.
+
+Quando um limite e atingido, o Executor retorna erro explicito e o agente nao
+deve concluir a tarefa. CPU, memoria, processos filhos e temporarios ainda nao
+possuem limite portavel nesta camada; permanecem pendentes para a configuracao
+do container/runtime da proxima etapa.
+
 ## Registro da ultima fase validada
 
 O teste controlado da issue #43 foi executado em um workspace limpo baseado no

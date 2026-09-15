@@ -17,6 +17,10 @@ class ToolHandler:
         repo_path: str = ".",
         allowed_paths: Optional[list[str]] = None,
         strict_scope: bool = False,
+        command_timeout_seconds: int = 60,
+        max_output_chars: int = 10000,
+        max_commands: int = 100,
+        max_write_bytes: int = 1_000_000,
     ):
         """Inicializa o handler.
 
@@ -25,6 +29,11 @@ class ToolHandler:
         """
         self.repo_path = Path(repo_path).resolve()
         self.strict_scope = strict_scope
+        self.command_timeout_seconds = command_timeout_seconds
+        self.max_output_chars = max_output_chars
+        self.max_commands = max_commands
+        self.max_write_bytes = max_write_bytes
+        self.command_count = 0
         self.allowed_paths = {
             path.replace("\\", "/").lstrip("./") for path in (allowed_paths or [])
         }
@@ -109,6 +118,8 @@ class ToolHandler:
 
         path = parts[0]
         content = parts[1]
+        if len(content.encode("utf-8")) > self.max_write_bytes:
+            return f"ERROR: File content exceeds limit ({self.max_write_bytes} bytes)"
 
         try:
             filepath = self._safe_path(path)
@@ -159,21 +170,30 @@ class ToolHandler:
             or (argv[0] == "npm" and len(argv) > 1 and argv[1] in {"install", "ci", "update"})
         ):
             return "ERROR: Package installation is not allowed during an autonomous task"
+        if self.command_count >= self.max_commands:
+            return f"ERROR: Task command limit reached ({self.max_commands})"
+        self.command_count += 1
         try:
             result = subprocess.run(
                 argv,
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=self.command_timeout_seconds,
                 cwd=str(self.repo_path),
                 check=False,
             )
             output = result.stdout
             if result.stderr:
                 output += "\nSTDERR: " + result.stderr
-            return output or f"Command exited with code {result.returncode}"
+            output = output or f"Command exited with code {result.returncode}"
+            if len(output) > self.max_output_chars:
+                output = (
+                    output[: self.max_output_chars]
+                    + f"\n[output truncated at {self.max_output_chars} characters]"
+                )
+            return output
         except subprocess.TimeoutExpired:
-            return "ERROR: Timeout (60s)"
+            return f"ERROR: Timeout ({self.command_timeout_seconds}s)"
 
     def search_code(self, pattern: str) -> str:
         """Busca no codigo.
@@ -189,11 +209,17 @@ class ToolHandler:
                 ["grep", "-r", "--include=*.py", pattern, "."],
                 capture_output=True,
                 text=True,
-                timeout=30,
+                timeout=self.command_timeout_seconds,
                 cwd=str(self.repo_path),
             )
 
-            return result.stdout or "No matches found"
+            output = result.stdout or "No matches found"
+            if len(output) > self.max_output_chars:
+                return (
+                    output[: self.max_output_chars]
+                    + f"\n[output truncated at {self.max_output_chars} characters]"
+                )
+            return output
 
         except Exception as e:
             return f"ERROR: {e}"

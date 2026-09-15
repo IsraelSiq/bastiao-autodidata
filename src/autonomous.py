@@ -244,6 +244,16 @@ Steps:
                     str(self.workspace),
                     allowed_paths=plan.allowed_paths,
                     strict_scope=True,
+                    command_timeout_seconds=int(
+                        os.getenv("BASTIAO_COMMAND_TIMEOUT_SECONDS", "60")
+                    ),
+                    max_output_chars=int(
+                        os.getenv("BASTIAO_MAX_OUTPUT_CHARS", "10000")
+                    ),
+                    max_commands=int(os.getenv("BASTIAO_MAX_COMMANDS", "100")),
+                    max_write_bytes=int(
+                        os.getenv("BASTIAO_MAX_WRITE_BYTES", "1000000")
+                    ),
                 ),
                 max_iterations=self.max_iterations,
             )
