@@ -83,3 +83,24 @@ docker compose --profile agent stop bastiao
 
 Remova o token do ambiente apenas depois de parar o processo. Para impedir novos
 commits, revogue o token no GitHub e substitua-o por um token de menor escopo.
+
+## Registro da ultima fase validada
+
+O teste controlado da issue #43 foi executado em um workspace limpo baseado no
+`main`. A primeira tentativa revelou que o Planner nao reconhecia caminhos em
+texto simples e permitia `allowed_paths` vazio. Essa falha foi corrigida e
+testada com 28 testes locais.
+
+Na segunda execucao, o Planner identificou
+`allowed_paths=["src/health_marker.py"]`. O modelo tentou acessar arquivos
+inexistentes, mas essas tentativas nao entraram na PR. O ciclo terminou como
+`pull_request_opened`, com a PR #46 contendo somente:
+
+```python
+HEALTH_MARKER = "ok"
+```
+
+As PRs #45 e #46 foram revisadas e mergeadas manualmente. O container deve
+permanecer parado ate a proxima issue ser selecionada explicitamente. A
+proxima implementacao recomendada e a issue #34, seguida do reforco de escopo,
+#30 e #37, conforme [`ROADMAP.md`](../ROADMAP.md).
