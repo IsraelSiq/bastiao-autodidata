@@ -61,7 +61,14 @@ class AutonomousRunner:
         return result.stdout.strip()
 
     def _changed_files(self) -> list[dict]:
-        paths = self._git("diff", "--name-only", "origin/main").splitlines()
+        tracked = self._git("diff", "--name-only", "origin/main").splitlines()
+        status = self._git("status", "--short", "--untracked-files=all").splitlines()
+        untracked = [
+            line[3:]
+            for line in status
+            if line.startswith("?? ") and line[3:]
+        ]
+        paths = list(dict.fromkeys(tracked + untracked))
         files = []
         for relative in paths:
             path = Path(relative)

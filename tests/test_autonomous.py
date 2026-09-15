@@ -102,3 +102,23 @@ def test_resume_prompt_includes_previous_error():
     )
 
     assert "Previous error: constant HEALTH_MARKER does not match issue requirement." in rendered
+
+
+def test_changed_files_includes_new_files(tmp_path):
+    runner = AutonomousRunner.__new__(AutonomousRunner)
+    runner.workspace = tmp_path
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "health_marker.py").write_text(
+        'HEALTH_MARKER = "ok"\n', encoding="utf-8"
+    )
+
+    runner._git = Mock(side_effect=[
+        "",
+        "?? src/health_marker.py",
+    ])
+
+    assert runner._changed_files() == [{
+        "path": "src/health_marker.py",
+        "content": 'HEALTH_MARKER = "ok"\n',
+    }]
