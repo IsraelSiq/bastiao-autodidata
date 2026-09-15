@@ -29,6 +29,7 @@ class OmniRouteModel:
         ).rstrip("/")
         self.model = model or os.getenv("BASTIAO_MODEL", "llama3.2:3b")
         self.api_key = api_key or os.getenv("OMNIROUTE_API_KEY", "")
+        self.temperature = float(os.getenv("BASTIAO_TEMPERATURE", "0.2"))
 
         self.session = requests.Session()
         if self.api_key:
@@ -63,7 +64,7 @@ class OmniRouteModel:
                 {"role": "user", "content": user_prompt},
             ],
             "max_tokens": max_tokens,
-            "temperature": 0.7,
+            "temperature": self.temperature,
         }
 
         response = self.session.post(url, json=payload, timeout=120)

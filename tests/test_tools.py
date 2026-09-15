@@ -40,3 +40,7 @@ def test_tool_handler_enforces_planner_scope(tmp_path: Path):
         "src/other.py value"
     )
     assert handler.write_file("src/allowed.py value") == "OK: Wrote src/allowed.py"
+
+
+def test_tool_handler_accepts_completion_action(tmp_path: Path):
+    assert ToolHandler(str(tmp_path)).execute("complete") == "OK: Completion requested"

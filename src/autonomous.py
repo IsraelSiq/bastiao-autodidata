@@ -266,7 +266,13 @@ Steps:
             state.complete_step()
             state.save(self.state_dir)
             safe_diff = self._has_safe_diff()
-            review = self.reviewer.review(files, in_scope, safe_diff)
+            review = self.reviewer.review(
+                files,
+                in_scope,
+                safe_diff,
+                issue_text=f"{issue.title}\n{issue.body or ''}",
+                workspace=str(self.workspace),
+            )
             if not review.approved:
                 state.fail("; ".join(review.reasons))
                 state.save(self.state_dir)

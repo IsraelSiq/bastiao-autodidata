@@ -144,10 +144,13 @@ Respond with actions NOW:"""
 
             # 3. Executa acoes
             outputs = []
+            action_errors = []
             for action in actions:
                 output = self.env.execute_action(action)
                 outputs.append(f"{action}\n=> {output[:200]}")
                 logger.info(f"Action: {action} => {output[:100]}")
+                if output.startswith("ERROR:"):
+                    action_errors.append(output)
 
             # 4. Prepara proximo prompt
             user_prompt = f"""Previous actions:
@@ -161,6 +164,13 @@ Emit 'complete' if the verified plan is finished."""
 
             # Completion is an explicit parsed action, not free-form model text.
             if any(action.strip().lower() == "complete" for action in actions):
+                if action_errors:
+                    logger.warning("Completion rejected after action errors")
+                    user_prompt += (
+                        "\nCompletion was rejected because an action failed. "
+                        "Fix the errors and verify again before emitting complete."
+                    )
+                    continue
                 logger.info("Agent finished; external quality gates must still pass")
                 return True
 
