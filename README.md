@@ -1,3 +1,5 @@
+> **Checkpoint operacional (2026-09-15):** a PR #48 foi mergeada na `main` (commit `6312fc4`). Foram concluidos Quality Gate, escopo estrito e limites portaveis do sandbox. O container deve permanecer parado; a proxima fase e a issue #37, ainda nao iniciada. Consulte [`ROADMAP.md`](ROADMAP.md) e [`docs/SESSION-CHECKPOINT.md`](docs/SESSION-CHECKPOINT.md) antes de retomar.
+
 # Bastiao Autodidata
 
 Agente experimental que transforma issues do GitHub em propostas de implementacao
