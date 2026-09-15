@@ -90,6 +90,23 @@ class AutonomousRunner:
         )
         return True
 
+    @staticmethod
+    def _format_plan(plan) -> str:
+        """Provide the model with the complete planner contract."""
+        criteria = "\n".join(f"- {item}" for item in plan.acceptance_criteria) or "- none"
+        paths = "\n".join(f"- {path}" for path in plan.allowed_paths) or "- none explicitly named"
+        steps = "\n".join(
+            f"- {step.id}: {step.title} ({step.action})" for step in plan.steps
+        )
+        return f"""Allowed paths:
+{paths}
+
+Acceptance criteria:
+{criteria}
+
+Steps:
+{steps}"""
+
     def _issue_paths(self, title: str, body: str) -> set[str]:
         """Extract explicit repository paths from an issue for scope validation."""
         text = f"{title}\n{body}"
@@ -179,9 +196,7 @@ class AutonomousRunner:
             solved = agent.solve(
                 issue.title,
                 issue.body or "",
-                plan="\n".join(
-                    f"{step.id}: {step.title} ({step.action})" for step in plan.steps
-                ),
+                plan=self._format_plan(plan),
             )
             files = self._changed_files() if solved else []
             if not solved or not files:

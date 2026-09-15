@@ -93,7 +93,11 @@ Structured plan:
 
 Task: Fix this issue.
 
-Start by exploring the repository.
+Start with `list .` and only read paths returned by `list` or explicitly named
+in the issue/plan. Do not invent paths. The planner scope below is authoritative:
+- write only files listed as allowed;
+- never use git add, git commit, git push, reset, checkout, or install packages;
+- run tests only after inspecting the relevant files.
 
 Respond with actions ONLY:
 """

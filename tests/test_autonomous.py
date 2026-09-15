@@ -64,3 +64,17 @@ def test_runner_reports_github_unavailable():
         "status": "github_unavailable",
         "error": "ConnectionError: network down",
     }
+
+
+def test_format_plan_includes_scope_and_acceptance_criteria():
+    from src.planner import GitHubIssue, Planner
+
+    plan = Planner().build_issue_plan(
+        GitHubIssue(32, "Planner", "- [ ] Add `src/planner.py`", [], "open")
+    )
+
+    rendered = AutonomousRunner._format_plan(plan)
+
+    assert "src/planner.py" in rendered
+    assert "Add `src/planner.py`" in rendered
+    assert "inspect:" in rendered
