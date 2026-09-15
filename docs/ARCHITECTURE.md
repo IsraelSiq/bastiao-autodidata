@@ -12,30 +12,46 @@ periodicos. O processo permanece ativo mesmo quando um ciclo nao encontra issues
 Orquestra o fluxo de uma issue:
 
 1. lista issues abertas;
-2. atualiza `origin/main`;
-3. recria a branch `bastiao/issue-N` a partir da base;
-4. executa `SWEAgent` no workspace;
-5. coleta arquivos modificados;
-6. executa testes;
-7. valida o diff;
-8. publica o commit e a pull request via `GitHubClient`.
+2. aplica a selecao e a aprovacao humana;
+3. atualiza `origin/main` e recria ou retoma a branch `bastiao/issue-N`;
+4. cria ou restaura o plano e o checkpoint;
+5. executa `SWEAgent` no workspace;
+6. coleta arquivos modificados;
+7. executa testes;
+8. valida escopo, diff e requisitos explicitos com o `Reviewer`;
+9. publica o commit e a pull request via `GitHubClient`.
 
 ### `src/swe_agent.py`
 
 Mantem o loop de iteracoes com o modelo. O modelo deve retornar somente acoes
-`read`, `write`, `run`, `search`, `list` ou `DONE`. Respostas sem acoes sao
-solicitadas novamente ate o limite configurado.
+`read`, `write`, `run`, `search`, `list` ou `complete`. A acao `complete` so
+encerra quando nao houve erro nas acoes da iteracao. Respostas sem acoes ou
+conclusoes apos falhas sao solicitadas novamente ate o limite configurado.
 
 ### `src/tools.py` e `src/sandbox.py`
 
 Formam a superficie de ferramentas. O caminho recebido e resolvido contra a
 raiz do repositorio, e comandos sao executados com `shell=False`, timeout e
-allowlist.
+allowlist. Escritas ficam limitadas aos caminhos extraidos pelo Planner e
+`complete` e tratado como marcador de controle, nao como comando do shell.
 
 ### `src/model.py`
 
 Envia mensagens para `/chat/completions`. A URL pode ser informada com ou sem
-o sufixo `/v1`; o cliente evita duplicar esse segmento.
+o sufixo `/v1`; o cliente evita duplicar esse segmento. A temperatura e
+configuravel por `BASTIAO_TEMPERATURE` e usa `0.2` por padrao.
+
+### `src/reviewer.py`
+
+Executa o gate independente do modelo antes da publicacao. Rejeita ausencia de
+arquivos, escopo invalido, diff inseguro, Python invalido e valores de
+constantes que nao correspondem a requisitos explicitos da issue.
+
+### `src/metrics.py` e `src/task_state.py`
+
+Registram cada ciclo em JSONL e mantem checkpoints por issue. No Compose, ambos
+ficam em `/var/lib/bastiao`, separado do workspace montado em
+`/workspace/target`.
 
 ### `src/github_client.py`
 
@@ -45,9 +61,10 @@ pull request e comentarios. O agente publica pela API em vez de executar
 
 ## Isolamento
 
-O container monta somente o workspace alvo em `/workspace/target`. O codigo do
-agente fica na imagem em `/app`. Assim, uma resposta do modelo nao pode escrever
-diretamente sobre o checkout do proprio agente.
+O container monta somente o workspace alvo em `/workspace/target` e o estado em
+`/var/lib/bastiao`. O codigo do agente fica na imagem em `/app`. Assim, uma
+resposta do modelo nao pode escrever diretamente sobre o checkout do proprio
+agente e checkpoints nao contaminam o repositorio alvo.
 
 A branch local e recriada a partir de `origin/main` a cada issue. Isso evita
 carregar alteracoes de uma issue anterior para a seguinte, mas tambem significa
@@ -59,8 +76,11 @@ ciclo; o workspace deve ser dedicado ao agente.
 | Estado | Significado |
 | --- | --- |
 | `no_open_issues` | Nao havia issue aberta para processar |
+| `pending_approval` | Issue selecionada, mas nao aprovada |
 | `failed` | O modelo nao concluiu ou nao houve patch testavel |
+| `rejected_out_of_scope` | O patch alterou arquivo fora do escopo |
 | `rejected_unsafe_diff` | O patch foi bloqueado pela validacao de diff |
+| `rejected_by_reviewer` | O Reviewer rejeitou o patch |
 | `pull_request_opened` | Commit e pull request foram publicados |
 
 ## Dependencias externas

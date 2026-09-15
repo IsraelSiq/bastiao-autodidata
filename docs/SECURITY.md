@@ -14,6 +14,10 @@ GitHub. Isso reduz risco, mas nao substitui revisao humana.
 - A coleta de arquivos exclui `.env` e conteudo de `.git`.
 - Diffs com muitas remocoes e poucas adicoes sao rejeitados.
 - Falha de testes impede a publicacao.
+- A aprovacao humana e exigida por padrao antes de iniciar a issue.
+- O Reviewer valida escopo, diff, sintaxe Python e requisitos simples de
+  constantes antes da criacao da pull request.
+- Checkpoints e metricas ficam fora do workspace do repositorio.
 - Branches sao criadas a partir de `origin/main`.
 - O agente abre pull requests, mas nao faz merge.
 - O token fica fora da imagem por meio de `env_file` e `.dockerignore`.
@@ -37,9 +41,9 @@ Se um token for exposto, revogue-o imediatamente no GitHub e gere outro.
 ## Limites conhecidos
 
 O agente ainda pode criar uma mudanca semanticamente errada que passe por
-`compileall` ou por testes insuficientes. O bloqueio de diff detecta uma classe
-de erro destrutivo, nao prova corretude. A validacao semantica por issue e uma
-melhoria futura.
+`compileall` ou por testes insuficientes. O Reviewer cobre requisitos simples
+e explicitos, mas nao substitui uma revisao humana profunda nem uma segunda
+avaliacao por modelo independente.
 
 O comando `search` usa uma ferramenta externa de busca disponivel no ambiente;
 o comando `run` continua limitado pelo nome do executavel, mas nao deve ser

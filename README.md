@@ -11,8 +11,10 @@ O fluxo implantado usa:
 - Ollama local compativel com a API OpenAI;
 - um workspace separado do codigo do agente;
 - uma branch `bastiao/issue-N` por issue;
-- testes antes da publicacao;
-- validacao de diff para rejeitar substituicoes destrutivas;
+- aprovacao humana antes da execucao;
+- Planner com caminhos permitidos e passos verificaveis;
+- testes, validacao de diff e Reviewer antes da publicacao;
+- estado e metricas persistentes fora do workspace;
 - GitHub Data API para publicar arquivos, commit e pull request.
 
 O protocolo continua experimental. A qualidade da alteracao depende do modelo e
@@ -21,7 +23,7 @@ toda pull request deve passar por revisao humana antes do merge.
 ## Fluxo
 
 ```text
-issue aberta
+issue aberta e explicitamente aprovada
     |
     v
 branch bastiao/issue-N baseada em origin/main
@@ -30,10 +32,10 @@ branch bastiao/issue-N baseada em origin/main
 SWE-agent (ler, pesquisar, escrever e executar testes)
     |
     v
-pytest ou compileall
+pytest ou compileall + validacao semantica
     |
     v
-validacao de diff
+Reviewer deterministico
     |
     +--> rejeitado: comentario na issue, sem PR
     |
@@ -41,7 +43,8 @@ validacao de diff
 commit via GitHub API -> pull request -> comentario na issue
 ```
 
-O ciclo retorna `no_open_issues`, `failed`, `rejected_unsafe_diff` ou
+O ciclo retorna `no_open_issues`, `pending_approval`, `failed`,
+`rejected_out_of_scope`, `rejected_unsafe_diff`, `rejected_by_reviewer` ou
 `pull_request_opened`. Uma issue e processada por ciclo conforme
 `BASTIAO_MAX_ISSUES`.
 
@@ -54,13 +57,20 @@ passos verificáveis: `inspect`, `implement`, `verify` e `review`. O
 rejeitadas quando o caminho não pertence ao plano, além das restrições gerais
 de comandos e caminhos.
 
-O `TaskExecutionState` é salvo em
-`.bastiao/tasks/issue-N.json` e contém o plano serializado, passo atual,
-tentativas, último resultado e erro. Esse checkpoint é atualizado antes de
-iniciar a execução, após a verificação e em falhas. Ele permite retomar o
-contexto essencial sem depender do histórico textual do modelo. A conclusão
-do SWE-agent exige a ação explícita `complete`; texto livre como `DONE` não
-encerra mais uma tarefa.
+O `TaskExecutionState` e salvo em
+`/var/lib/bastiao/tasks/issue-N.json` no Docker Compose e contem o plano
+serializado, passo atual, tentativas, ultimo resultado, branch e erro. Esse
+checkpoint e atualizado antes de iniciar a execucao, apos a verificacao e em
+falhas. Ele permite retomar o contexto essencial sem depender do historico
+textual do modelo. A conclusao do SWE-agent exige a acao explicita
+`complete`, reconhecida pelo Executor; texto livre como `DONE` nao encerra
+uma tarefa. Uma conclusao acompanhada de erro de ferramenta tambem e
+rejeitada.
+
+O arquivo de aprovacao e `/var/lib/bastiao/approvals.json` e deve conter uma
+lista JSON de numeros de issues, por exemplo `[43]`. Com
+`BASTIAO_REQUIRE_APPROVAL=true`, issues fora dessa lista permanecem em
+`pending_approval`.
 
 ## Execucao local
 
@@ -106,6 +116,13 @@ docker compose --profile agent stop bastiao
 O ChromaDB continua definido no Compose para a futura camada de memoria, mas nao
 e utilizado pelo fluxo issue→PR atual.
 
+O estado e as metricas sao montados separadamente:
+
+```text
+./state/tasks/issue-N.json   -> /var/lib/bastiao/tasks/issue-N.json
+./state/metrics/cycles.jsonl -> /var/lib/bastiao/metrics/cycles.jsonl
+```
+
 ## Configuracao
 
 As variaveis documentadas em `.env.example` sao:
@@ -124,6 +141,9 @@ As variaveis documentadas em `.env.example` sao:
 | `BASTIAO_ISSUE_NUMBERS` | nao | vazio | Lista separada por virgulas para limitar issues |
 | `BASTIAO_RETRY_ISSUES` | nao | `false` | Permite retry de issues que ja possuem PR |
 | `BASTIAO_GITHUB_TIMEOUT_SECONDS` | nao | `20` | Timeout de cada requisicao a API do GitHub |
+| `BASTIAO_REQUIRE_APPROVAL` | nao | `true` | Exige aprovacao no arquivo persistente antes da execucao |
+| `BASTIAO_APPROVAL_FILE` | nao | `/var/lib/bastiao/approvals.json` | Arquivo JSON com issues aprovadas |
+| `BASTIAO_STATE_DIR` | nao | `/var/lib/bastiao` | Diretorio de checkpoints e metricas |
 | `OMNIROUTE_URL` | nao | `http://127.0.0.1:11434/v1` | Base URL da API de chat |
 | `OMNIROUTE_API_KEY` | nao | vazio | Chave opcional para o endpoint |
 
@@ -131,8 +151,15 @@ Dentro do Compose, `BASTIAO_WORKSPACE` e `OMNIROUTE_URL` sao definidos pelo
 servico para `/workspace/target` e `http://ollama:11434/v1`.
 
 Para iniciar pelo roadmap em uma issue especifica, use por exemplo
-`BASTIAO_ISSUE_NUMBERS=29`. O agente ignora automaticamente branches que ja
-possuem uma pull request, a menos que `BASTIAO_RETRY_ISSUES=true`.
+`BASTIAO_ISSUE_NUMBERS=29` e registre a aprovacao em
+`state/approvals.json`:
+
+```json
+[29]
+```
+
+O agente ignora automaticamente branches que ja possuem uma pull request, a
+menos que `BASTIAO_RETRY_ISSUES=true`.
 
 ## Seguranca e limites
 
@@ -143,6 +170,10 @@ possuem uma pull request, a menos que `BASTIAO_RETRY_ISSUES=true`.
 - O agente nao faz merge e nao deve usar credenciais de administrador.
 - Diffs que removem muito mais linhas do que adicionam sao rejeitados.
 - Falhas de teste impedem a publicacao.
+- O Reviewer valida caminhos, seguranca do diff, sintaxe Python e constantes
+  explicitamente exigidas pela issue.
+- O modelo nao pode publicar commits diretamente; a publicacao usa a API do
+  GitHub somente depois dos gates.
 - O token deve permanecer somente no ambiente do processo ou no `.env` local,
   que esta fora do contexto de build pelo `.dockerignore`.
 
@@ -154,10 +185,10 @@ Detalhes operacionais e procedimentos de incidente estao em
 - [x] Fase 1: loop SWE-agent com ferramentas restritas
 - [x] Fase 2: fluxo autonomo issue → branch → teste → PR
 - [x] Fase 3: isolamento Docker e validacao de diff
-- [ ] Validacao semantica especifica por issue
+- [x] Validacao semantica basica para constantes e sintaxe Python
 - [ ] Memoria persistente com ChromaDB
-- [ ] Revisao humana obrigatoria como gate configuravel
-- [ ] Observabilidade e metricas por ciclo
+- [x] Revisao humana obrigatoria como gate configuravel
+- [x] Observabilidade e metricas por ciclo
 
 ## Licenca
 
