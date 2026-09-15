@@ -1,0 +1,1 @@
+HEALTH_MARKER = "ok"
