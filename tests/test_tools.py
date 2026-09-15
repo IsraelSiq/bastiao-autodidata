@@ -42,5 +42,34 @@ def test_tool_handler_enforces_planner_scope(tmp_path: Path):
     assert handler.write_file("src/allowed.py value") == "OK: Wrote src/allowed.py"
 
 
+def test_tool_handler_disables_writes_when_strict_scope_is_empty(tmp_path: Path):
+    handler = ToolHandler(str(tmp_path), strict_scope=True)
+
+    assert "Planner scope is empty" in handler.write_file("src/blocked.py value")
+
+
+def test_tool_handler_enforces_command_count_and_output_limits(tmp_path: Path):
+    handler = ToolHandler(
+        str(tmp_path),
+        max_commands=1,
+        max_output_chars=5,
+    )
+
+    assert "truncated at 5" in handler.run_command("python -c \"print('123456789')\"")
+    assert "command limit reached" in handler.run_command("python -c \"print('ok')\"")
+
+
+def test_tool_handler_enforces_write_size_limit(tmp_path: Path):
+    handler = ToolHandler(str(tmp_path), max_write_bytes=3)
+
+    assert "exceeds limit" in handler.write_file("src/file.py abcd")
+
+
+def test_tool_handler_reports_configured_timeout(tmp_path: Path):
+    handler = ToolHandler(str(tmp_path), command_timeout_seconds=1)
+
+    assert "Timeout (1s)" in handler.run_command("python -c \"import time; time.sleep(2)\"")
+
+
 def test_tool_handler_accepts_completion_action(tmp_path: Path):
     assert ToolHandler(str(tmp_path)).execute("complete") == "OK: Completion requested"

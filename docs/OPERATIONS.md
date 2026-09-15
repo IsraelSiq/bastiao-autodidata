@@ -84,6 +84,44 @@ docker compose --profile agent stop bastiao
 Remova o token do ambiente apenas depois de parar o processo. Para impedir novos
 commits, revogue o token no GitHub e substitua-o por um token de menor escopo.
 
+## Quality Gate
+
+Antes de revisar ou publicar uma PR, o agente executa os checks descobertos no
+workspace:
+
+- `pytest tests -q`, quando existe `tests/`;
+- `python -m compileall -q .`, quando existem arquivos Python;
+- `npm run lint` e `npm run typecheck`, somente quando definidos em
+  `package.json`;
+- `git diff --check origin/main`.
+
+Cada check possui timeout, codigo de retorno, duracao e saida limitada. Se um
+check falhar ou exceder o timeout, o ciclo termina como
+`quality_gate_failed`, grava a evidencia nas metricas e nao cria commit nem PR.
+O timeout pode ser ajustado por `BASTIAO_QUALITY_GATE_TIMEOUT_SECONDS`.
+
+## Escopo estrito
+
+No modo operacional, o runner usa `strict_scope`. Um plano sem caminhos
+permitidos e rejeitado antes de chamar o modelo (`rejected_no_scope`). Se o
+modelo tentar escrever fora do escopo, a escrita e bloqueada e o SWE-agent
+aborta imediatamente a tarefa. Nenhuma recuperacao automatica ou publicacao
+ocorre depois dessa violacao.
+
+## Limites do sandbox
+
+Os limites operacionais sao configurados no `.env`:
+
+- `BASTIAO_COMMAND_TIMEOUT_SECONDS`: encerra comandos que excedem o tempo;
+- `BASTIAO_MAX_COMMANDS`: impede consumo indefinido de comandos por tarefa;
+- `BASTIAO_MAX_OUTPUT_CHARS`: trunca saidas capturadas;
+- `BASTIAO_MAX_WRITE_BYTES`: impede arquivos gerados excessivamente grandes.
+
+Quando um limite e atingido, o Executor retorna erro explicito e o agente nao
+deve concluir a tarefa. CPU, memoria, processos filhos e temporarios ainda nao
+possuem limite portavel nesta camada; permanecem pendentes para a configuracao
+do container/runtime da proxima etapa.
+
 ## Registro da ultima fase validada
 
 O teste controlado da issue #43 foi executado em um workspace limpo baseado no

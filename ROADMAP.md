@@ -32,7 +32,7 @@ incorretos.
 
 ## Proxima sequencia
 
-### 1. Issue #34 — Quality Gate real
+### 1. Issue #34 — Quality Gate real — concluida nesta fase
 
 Impedir a criacao de PR quando o resultado for apenas uma declaracao do modelo.
 O gate deve:
@@ -46,7 +46,15 @@ O gate deve:
 - bloquear publicacao em caso de falha ou resultado inconclusivo;
 - testar sucesso, falha e timeout do proprio Bastiao.
 
-### 2. Reforco de escopo e abortamento
+Implementacao entregue em `src/quality_gate.py`: o gate descobre pytest,
+compileall, scripts `lint`/`typecheck` de `package.json` e `git diff --check`.
+Cada comando tem timeout configuravel, captura limitada de saida, codigo de
+retorno, duracao e estado de timeout. A publicacao e bloqueada com
+`quality_gate_failed` quando qualquer check falha.
+
+Validacao local desta fase: **32 testes passaram**.
+
+### 2. Reforco de escopo e abortamento — concluida nesta fase
 
 Esta etapa deve acompanhar ou preceder a implementacao de #34:
 
@@ -61,11 +69,34 @@ Tambem deve ser avaliada a troca do protocolo textual de acoes por JSON
 estruturado, especialmente para `write`, para preservar conteudo multilinha e
 aspas sem ambiguidade.
 
+Implementacao entregue:
+
+- modo `strict_scope` impede qualquer escrita quando o Planner nao produziu
+  caminhos permitidos;
+- o runner rejeita planos sem escopo antes de iniciar o modelo;
+- uma tentativa de escrita fora do escopo aborta imediatamente o SWE-agent;
+- o ciclo registra `rejected_no_scope` ou `failed` sem criar commit ou PR;
+- testes cobrem bloqueio de escopo vazio e abortamento imediato.
+
+Validacao local desta fase: **35 testes passaram**.
+
 ### 3. Issue #30 — Limites do sandbox
 
 Adicionar timeout por comando, limites de processos, memoria, CPU, arquivos
 temporarios e tamanho de saida. O encerramento deve ser limpo, observavel e
 testado. Isolamento de kernel completo fica fora desta etapa.
+
+Implementacao parcial entregue nesta fase:
+
+- timeout configuravel por comando;
+- limite de comandos por tarefa;
+- limite de saida capturada;
+- limite de bytes por arquivo escrito;
+- falhas de limite retornam erro explicito e impedem conclusao/publicacao.
+
+CPU, memoria, processos filhos e limpeza de temporarios continuam pendentes
+para uma segunda etapa da #30, pois exigem primitivas especificas do runtime ou
+do container.
 
 ### 4. Issue #37 — Observabilidade operacional
 

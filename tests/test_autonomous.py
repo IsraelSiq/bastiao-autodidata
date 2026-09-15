@@ -1,4 +1,4 @@
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 import requests
 from src.metrics import CycleMetrics
 
@@ -122,3 +122,31 @@ def test_changed_files_includes_new_files(tmp_path):
         "path": "src/health_marker.py",
         "content": 'HEALTH_MARKER = "ok"\n',
     }]
+
+
+def test_runner_exposes_quality_gate_evidence(tmp_path):
+    from src.quality_gate import GateCheck, QualityGateResult
+
+    runner = AutonomousRunner.__new__(AutonomousRunner)
+    runner.workspace = tmp_path
+    runner.quality_gate_timeout = 7
+
+    with patch("src.autonomous.QualityGate") as gate_class:
+        gate_class.return_value.run.return_value = QualityGateResult(
+            passed=True,
+            checks=[
+                GateCheck(
+                    name="git-diff-check",
+                    command=["git", "diff", "--check", "origin/main"],
+                    passed=True,
+                    returncode=0,
+                    duration_seconds=0.01,
+                    output="",
+                )
+            ],
+        )
+        result = runner._run_quality_gate()
+
+    gate_class.assert_called_once_with(tmp_path, timeout_seconds=7)
+    assert result["passed"]
+    assert result["checks"][-1]["name"] == "git-diff-check"
