@@ -80,11 +80,20 @@ class Planner:
             for line in text.splitlines()
             if line.strip().startswith(("- [ ]", "- [x]", "- [X]"))
         ]
+        candidates = set(re.findall(r"`([^`]+)`", text))
+        candidates.update(
+            re.findall(
+                r"\b(?:src|tests|scripts|docs|utils|open-sse)(?:/[A-Za-z0-9_.-]+)+",
+                text,
+            )
+        )
         paths = sorted(
             {
                 value.replace("\\", "/").lstrip("./")
-                for value in re.findall(r"`([^`]+)`", text)
-                if "/" in value and not value.startswith(("http://", "https://"))
+                for value in candidates
+                if "/" in value
+                and not value.startswith(("http://", "https://"))
+                and not value.endswith("/")
             }
         )
         steps = [
