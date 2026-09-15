@@ -54,7 +54,7 @@ retorno, duracao e estado de timeout. A publicacao e bloqueada com
 
 Validacao local desta fase: **32 testes passaram**.
 
-### 2. Reforco de escopo e abortamento
+### 2. Reforco de escopo e abortamento — concluida nesta fase
 
 Esta etapa deve acompanhar ou preceder a implementacao de #34:
 
@@ -68,6 +68,17 @@ Esta etapa deve acompanhar ou preceder a implementacao de #34:
 Tambem deve ser avaliada a troca do protocolo textual de acoes por JSON
 estruturado, especialmente para `write`, para preservar conteudo multilinha e
 aspas sem ambiguidade.
+
+Implementacao entregue:
+
+- modo `strict_scope` impede qualquer escrita quando o Planner nao produziu
+  caminhos permitidos;
+- o runner rejeita planos sem escopo antes de iniciar o modelo;
+- uma tentativa de escrita fora do escopo aborta imediatamente o SWE-agent;
+- o ciclo registra `rejected_no_scope` ou `failed` sem criar commit ou PR;
+- testes cobrem bloqueio de escopo vazio e abortamento imediato.
+
+Validacao local desta fase: **35 testes passaram**.
 
 ### 3. Issue #30 — Limites do sandbox
 

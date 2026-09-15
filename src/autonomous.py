@@ -226,13 +226,25 @@ Steps:
             if state is None:
                 state = create_task_state(plan)
                 state.branch = branch
+            if not plan.allowed_paths:
+                state.fail("planner produced no allowed paths")
+                state.save(self.state_dir)
+                self.client.add_comment(
+                    issue.number,
+                    "Bastiao rejected the task because the secure Planner produced no allowed paths.",
+                )
+                return {"issue": issue.number, "status": "rejected_no_scope", "files": 0}
             self.client.create_branch(branch)
             state.start_step()
             state.save(self.state_dir)
 
             agent = SWEAgent(
                 model=OmniRouteModel(),
-                env=SandboxEnv(str(self.workspace), allowed_paths=plan.allowed_paths),
+                env=SandboxEnv(
+                    str(self.workspace),
+                    allowed_paths=plan.allowed_paths,
+                    strict_scope=True,
+                ),
                 max_iterations=self.max_iterations,
             )
             solved = agent.solve(

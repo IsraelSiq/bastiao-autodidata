@@ -12,13 +12,19 @@ from typing import Optional
 class ToolHandler:
     """Gerencia ferramentas do agente."""
 
-    def __init__(self, repo_path: str = ".", allowed_paths: Optional[list[str]] = None):
+    def __init__(
+        self,
+        repo_path: str = ".",
+        allowed_paths: Optional[list[str]] = None,
+        strict_scope: bool = False,
+    ):
         """Inicializa o handler.
 
         Args:
             repo_path: Caminho do repositorio
         """
         self.repo_path = Path(repo_path).resolve()
+        self.strict_scope = strict_scope
         self.allowed_paths = {
             path.replace("\\", "/").lstrip("./") for path in (allowed_paths or [])
         }
@@ -109,6 +115,8 @@ class ToolHandler:
         except ValueError as error:
             return f"ERROR: {error}"
         normalized = filepath.relative_to(self.repo_path).as_posix()
+        if self.strict_scope and not self.allowed_paths:
+            return "ERROR: Planner scope is empty; writes are disabled"
         if self.allowed_paths and normalized not in self.allowed_paths:
             return f"ERROR: Path is outside the planner scope: {path}"
         filepath.parent.mkdir(parents=True, exist_ok=True)

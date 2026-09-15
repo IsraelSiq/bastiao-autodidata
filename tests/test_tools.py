@@ -42,5 +42,11 @@ def test_tool_handler_enforces_planner_scope(tmp_path: Path):
     assert handler.write_file("src/allowed.py value") == "OK: Wrote src/allowed.py"
 
 
+def test_tool_handler_disables_writes_when_strict_scope_is_empty(tmp_path: Path):
+    handler = ToolHandler(str(tmp_path), strict_scope=True)
+
+    assert "Planner scope is empty" in handler.write_file("src/blocked.py value")
+
+
 def test_tool_handler_accepts_completion_action(tmp_path: Path):
     assert ToolHandler(str(tmp_path)).execute("complete") == "OK: Completion requested"

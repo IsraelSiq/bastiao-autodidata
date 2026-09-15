@@ -151,6 +151,9 @@ Respond with actions NOW:"""
                 logger.info(f"Action: {action} => {output[:100]}")
                 if output.startswith("ERROR:"):
                     action_errors.append(output)
+                    if "planner scope" in output.lower():
+                        logger.warning("Scope violation detected; aborting task")
+                        return False
 
             # 4. Prepara proximo prompt
             user_prompt = f"""Previous actions:

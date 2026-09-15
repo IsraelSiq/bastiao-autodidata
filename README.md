@@ -190,8 +190,8 @@ Detalhes operacionais e procedimentos de incidente estao em
 O roadmap detalhado, a ordem de dependencias e o historico de validacao estao
 em [`ROADMAP.md`](ROADMAP.md). A proxima retomada deve seguir esta ordem:
 
-1. **#34 — quality gate real antes de publicar uma PR**.
-2. **Reforco de escopo e abortamento apos violacao**.
+1. **#34 — quality gate real antes de publicar uma PR** — concluida.
+2. **Reforco de escopo e abortamento apos violacao** — concluido.
 3. **#30 — limites de CPU, memoria, processos e saida do sandbox**.
 4. **#37 — observabilidade, checkpoints e diagnostico operacional**.
 5. **#36 — abstracao de providers e fallback limitado**.
@@ -215,6 +215,8 @@ Resumo do que ja foi concluido:
 - [x] Teste controlado #43 concluido com a PR #46 contendo somente
   `src/health_marker.py`.
 - [ ] Quality gate completo, limites de recursos e memoria persistente.
+- [x] Quality Gate com timeout, evidencias e bloqueio de publicacao.
+- [x] Escopo estrito: planos vazios rejeitados e violacoes abortam o agente.
 
 ## Licenca
 

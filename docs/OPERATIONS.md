@@ -100,6 +100,14 @@ check falhar ou exceder o timeout, o ciclo termina como
 `quality_gate_failed`, grava a evidencia nas metricas e nao cria commit nem PR.
 O timeout pode ser ajustado por `BASTIAO_QUALITY_GATE_TIMEOUT_SECONDS`.
 
+## Escopo estrito
+
+No modo operacional, o runner usa `strict_scope`. Um plano sem caminhos
+permitidos e rejeitado antes de chamar o modelo (`rejected_no_scope`). Se o
+modelo tentar escrever fora do escopo, a escrita e bloqueada e o SWE-agent
+aborta imediatamente a tarefa. Nenhuma recuperacao automatica ou publicacao
+ocorre depois dessa violacao.
+
 ## Registro da ultima fase validada
 
 O teste controlado da issue #43 foi executado em um workspace limpo baseado no
