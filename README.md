@@ -182,13 +182,34 @@ Detalhes operacionais e procedimentos de incidente estao em
 
 ## Roadmap
 
-- [x] Fase 1: loop SWE-agent com ferramentas restritas
-- [x] Fase 2: fluxo autonomo issue → branch → teste → PR
-- [x] Fase 3: isolamento Docker e validacao de diff
-- [x] Validacao semantica basica para constantes e sintaxe Python
-- [ ] Memoria persistente com ChromaDB
-- [x] Revisao humana obrigatoria como gate configuravel
-- [x] Observabilidade e metricas por ciclo
+O roadmap detalhado, a ordem de dependencias e o historico de validacao estao
+em [`ROADMAP.md`](ROADMAP.md). A proxima retomada deve seguir esta ordem:
+
+1. **#34 — quality gate real antes de publicar uma PR**.
+2. **Reforco de escopo e abortamento apos violacao**.
+3. **#30 — limites de CPU, memoria, processos e saida do sandbox**.
+4. **#37 — observabilidade, checkpoints e diagnostico operacional**.
+5. **#36 — abstracao de providers e fallback limitado**.
+6. **#35 — memoria persistente com ChromaDB**.
+7. **#38 — pipeline autodidata de pesquisa, estudo e avaliacao**.
+
+OpenHands, execucao 24/7, merge automatico e maior autonomia permanecem
+bloqueados ate que essas etapas tenham testes e gates verificaveis.
+
+Resumo do que ja foi concluido:
+
+- [x] Loop SWE-agent com ferramentas restritas.
+- [x] Fluxo issue → branch → testes → Reviewer → PR.
+- [x] Isolamento Docker e validacao de diff.
+- [x] Aprovacao humana persistente antes da execucao.
+- [x] Checkpoints e metricas fora do workspace.
+- [x] Retomada com erro anterior do Reviewer.
+- [x] Planner com caminhos em markdown e texto simples.
+- [x] Coleta de arquivos novos nao rastreados.
+- [x] Reviewer semantico para constantes e sintaxe Python.
+- [x] Teste controlado #43 concluido com a PR #46 contendo somente
+  `src/health_marker.py`.
+- [ ] Quality gate completo, limites de recursos e memoria persistente.
 
 ## Licenca
 
