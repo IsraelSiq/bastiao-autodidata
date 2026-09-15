@@ -32,7 +32,7 @@ incorretos.
 
 ## Proxima sequencia
 
-### 1. Issue #34 — Quality Gate real
+### 1. Issue #34 — Quality Gate real — concluida nesta fase
 
 Impedir a criacao de PR quando o resultado for apenas uma declaracao do modelo.
 O gate deve:
@@ -45,6 +45,14 @@ O gate deve:
 - devolver falhas ao agente em uma quantidade limitada de tentativas;
 - bloquear publicacao em caso de falha ou resultado inconclusivo;
 - testar sucesso, falha e timeout do proprio Bastiao.
+
+Implementacao entregue em `src/quality_gate.py`: o gate descobre pytest,
+compileall, scripts `lint`/`typecheck` de `package.json` e `git diff --check`.
+Cada comando tem timeout configuravel, captura limitada de saida, codigo de
+retorno, duracao e estado de timeout. A publicacao e bloqueada com
+`quality_gate_failed` quando qualquer check falha.
+
+Validacao local desta fase: **32 testes passaram**.
 
 ### 2. Reforco de escopo e abortamento
 

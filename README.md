@@ -141,6 +141,7 @@ As variaveis documentadas em `.env.example` sao:
 | `BASTIAO_ISSUE_NUMBERS` | nao | vazio | Lista separada por virgulas para limitar issues |
 | `BASTIAO_RETRY_ISSUES` | nao | `false` | Permite retry de issues que ja possuem PR |
 | `BASTIAO_GITHUB_TIMEOUT_SECONDS` | nao | `20` | Timeout de cada requisicao a API do GitHub |
+| `BASTIAO_QUALITY_GATE_TIMEOUT_SECONDS` | nao | `120` | Timeout de cada comando do Quality Gate |
 | `BASTIAO_REQUIRE_APPROVAL` | nao | `true` | Exige aprovacao no arquivo persistente antes da execucao |
 | `BASTIAO_APPROVAL_FILE` | nao | `/var/lib/bastiao/approvals.json` | Arquivo JSON com issues aprovadas |
 | `BASTIAO_STATE_DIR` | nao | `/var/lib/bastiao` | Diretorio de checkpoints e metricas |
@@ -169,7 +170,11 @@ menos que `BASTIAO_RETRY_ISSUES=true`.
 - Arquivos `.env` e caminhos dentro de `.git` nao sao publicados.
 - O agente nao faz merge e nao deve usar credenciais de administrador.
 - Diffs que removem muito mais linhas do que adicionam sao rejeitados.
-- Falhas de teste impedem a publicacao.
+- O Quality Gate executa testes, compileall, lint/type-check definidos em
+  `package.json` e `git diff --check`, registrando comando, saida, retorno,
+  duracao e timeout.
+- Qualquer falha ou timeout do Quality Gate impede a publicacao e gera o estado
+  `quality_gate_failed`.
 - O Reviewer valida caminhos, seguranca do diff, sintaxe Python e constantes
   explicitamente exigidas pela issue.
 - O modelo nao pode publicar commits diretamente; a publicacao usa a API do

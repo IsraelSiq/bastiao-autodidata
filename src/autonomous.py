@@ -17,6 +17,7 @@ from .task_state import create_task_state
 from .task_state import TaskExecutionState
 from .metrics import CycleMetrics
 from .reviewer import Reviewer
+from .quality_gate import QualityGate
 
 
 class AutonomousRunner:
@@ -38,6 +39,7 @@ class AutonomousRunner:
         )
         self.metrics = CycleMetrics(str(self.state_root / "metrics"))
         self.reviewer = Reviewer()
+        self.quality_gate_timeout = int(os.getenv("BASTIAO_QUALITY_GATE_TIMEOUT_SECONDS", "120"))
 
     def _is_approved(self, issue_number: int) -> bool:
         if os.getenv("BASTIAO_REQUIRE_APPROVAL", "true").lower() != "true":
@@ -80,22 +82,12 @@ class AutonomousRunner:
             files.append({"path": relative, "content": full_path.read_text(encoding="utf-8")})
         return files
 
-    def _run_tests(self) -> None:
-        """Run repository tests before publishing a patch."""
-        tests_dir = self.workspace / "tests"
-        if tests_dir.is_dir():
-            self._git("status", "--short")
-            subprocess.run(
-                ["python", "-m", "pytest", "tests", "-q"],
-                cwd=self.workspace,
-                check=True,
-            )
-        else:
-            subprocess.run(
-                ["python", "-m", "compileall", "-q", "."],
-                cwd=self.workspace,
-                check=True,
-            )
+    def _run_quality_gate(self) -> dict:
+        """Run all discovered checks and return publishable evidence."""
+        return QualityGate(
+            self.workspace,
+            timeout_seconds=self.quality_gate_timeout,
+        ).run().to_dict()
 
     def _has_safe_diff(self) -> bool:
         """Reject accidental wholesale replacements before publishing a PR."""
@@ -270,7 +262,30 @@ Steps:
                 )
                 return {"issue": issue.number, "status": "rejected_out_of_scope", "files": len(files)}
 
-            self._run_tests()
+            quality_gate = self._run_quality_gate()
+            if not quality_gate["passed"]:
+                reason = "quality gate failed"
+                failed = [
+                    check["name"]
+                    for check in quality_gate["checks"]
+                    if not check["passed"]
+                ]
+                if failed:
+                    reason += ": " + ", ".join(failed)
+                state.fail(reason)
+                state.save(self.state_dir)
+                self.client.add_comment(
+                    issue.number,
+                    "Bastiao blocked publication because the quality gate failed: "
+                    + reason
+                    + ".",
+                )
+                return {
+                    "issue": issue.number,
+                    "status": "quality_gate_failed",
+                    "files": len(files),
+                    "quality_gate": quality_gate,
+                }
             state.complete_step()
             state.save(self.state_dir)
             safe_diff = self._has_safe_diff()
