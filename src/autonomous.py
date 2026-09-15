@@ -4,6 +4,7 @@ import os
 import re
 import subprocess
 from pathlib import Path
+import requests
 
 from .swe_agent import SWEAgent
 from .env import SandboxEnv
@@ -129,7 +130,13 @@ class AutonomousRunner:
         return True
 
     def run_once(self) -> dict:
-        issues = self.client.list_issues(state="open")
+        try:
+            issues = self.client.list_issues(state="open")
+        except requests.RequestException as error:
+            return {
+                "status": "github_unavailable",
+                "error": f"{type(error).__name__}: {error}",
+            }
         processed = 0
         retry = os.getenv("BASTIAO_RETRY_ISSUES", "false").lower() == "true"
         selected_numbers = {
@@ -142,9 +149,17 @@ class AutonomousRunner:
             if selected_numbers and issue.number not in selected_numbers:
                 continue
             branch = f"bastiao/issue-{issue.number}"
-            if not retry and self.client.has_pull_request_for_branch(branch):
-                skipped.add(issue.number)
-                continue
+            if not retry:
+                try:
+                    if self.client.has_pull_request_for_branch(branch):
+                        skipped.add(issue.number)
+                        continue
+                except requests.RequestException as error:
+                    return {
+                        "issue": issue.number,
+                        "status": "github_unavailable",
+                        "error": f"{type(error).__name__}: {error}",
+                    }
             if processed >= int(os.getenv("BASTIAO_MAX_ISSUES", "1")):
                 break
             processed += 1

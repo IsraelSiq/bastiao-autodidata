@@ -1,4 +1,5 @@
 from unittest.mock import Mock
+import requests
 
 from src.autonomous import AutonomousRunner
 
@@ -52,3 +53,14 @@ def test_github_client_branch_attempt_detection():
 
     assert client.has_pull_request_for_branch("bastiao/issue-25")
     client.session.get.assert_called_once()
+
+
+def test_runner_reports_github_unavailable():
+    runner = AutonomousRunner.__new__(AutonomousRunner)
+    runner.client = Mock()
+    runner.client.list_issues.side_effect = requests.ConnectionError("network down")
+
+    assert runner.run_once() == {
+        "status": "github_unavailable",
+        "error": "ConnectionError: network down",
+    }
