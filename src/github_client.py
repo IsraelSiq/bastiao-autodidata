@@ -7,6 +7,8 @@ import os
 import requests
 from typing import Optional
 from dataclasses import dataclass
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 
 @dataclass
@@ -39,8 +41,21 @@ class GitHubClient:
         self.repo = repo
         self.token = token or os.getenv("GITHUB_TOKEN", "")
         self.base_url = "https://api.github.com"
+        self.timeout = float(os.getenv("BASTIAO_GITHUB_TIMEOUT_SECONDS", "20"))
 
         self.session = requests.Session()
+        retry = Retry(
+            total=3,
+            connect=3,
+            read=3,
+            backoff_factor=0.5,
+            status_forcelist=(429, 500, 502, 503, 504),
+            allowed_methods=frozenset({"GET", "POST", "PATCH"}),
+            raise_on_status=False,
+        )
+        adapter = HTTPAdapter(max_retries=retry)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
         if self.token:
             self.session.headers["Authorization"] = f"token {self.token}"
 
@@ -56,7 +71,7 @@ class GitHubClient:
         url = f"{self.base_url}/repos/{self.owner}/{self.repo}/issues"
         params = {"state": state, "per_page": 30}
 
-        response = self.session.get(url, params=params)
+        response = self.session.get(url, params=params, timeout=self.timeout)
         response.raise_for_status()
 
         issues = []
@@ -87,7 +102,7 @@ class GitHubClient:
             Issue
         """
         url = f"{self.base_url}/repos/{self.owner}/{self.repo}/issues/{number}"
-        response = self.session.get(url)
+        response = self.session.get(url, timeout=self.timeout)
         response.raise_for_status()
 
         data = response.json()
@@ -107,7 +122,7 @@ class GitHubClient:
             body: Conteudo do comentário
         """
         url = f"{self.base_url}/repos/{self.owner}/{self.repo}/issues/{issue_number}/comments"
-        response = self.session.post(url, json={"body": body})
+        response = self.session.post(url, json={"body": body}, timeout=self.timeout)
         response.raise_for_status()
 
     def close_issue(self, issue_number: int):
@@ -117,7 +132,11 @@ class GitHubClient:
             issue_number: Número da issue
         """
         url = f"{self.base_url}/repos/{self.owner}/{self.repo}/issues/{issue_number}"
-        response = self.session.patch(url, json={"state": "closed", "state_reason": "completed"})
+        response = self.session.patch(
+            url,
+            json={"state": "closed", "state_reason": "completed"},
+            timeout=self.timeout,
+        )
         response.raise_for_status()
 
     def create_issue(
@@ -141,7 +160,7 @@ class GitHubClient:
         if labels:
             payload["labels"] = labels
 
-        response = self.session.post(url, json=payload)
+        response = self.session.post(url, json=payload, timeout=self.timeout)
         response.raise_for_status()
 
         data = response.json()
@@ -163,7 +182,7 @@ class GitHubClient:
             Lista de arquivos
         """
         url = f"{self.base_url}/repos/{self.owner}/{self.repo}/contents/{path}"
-        response = self.session.get(url)
+        response = self.session.get(url, timeout=self.timeout)
         response.raise_for_status()
 
         return response.json()
@@ -178,7 +197,7 @@ class GitHubClient:
             Conteudo
         """
         url = f"{self.base_url}/repos/{self.owner}/{self.repo}/contents/{path}"
-        response = self.session.get(url)
+        response = self.session.get(url, timeout=self.timeout)
         response.raise_for_status()
 
         import base64
@@ -201,7 +220,7 @@ class GitHubClient:
         """
         # Pega SHA do ultimo commit
         ref_url = f"{self.base_url}/repos/{self.owner}/{self.repo}/git/refs/heads/{branch}"
-        ref_response = self.session.get(ref_url)
+        ref_response = self.session.get(ref_url, timeout=self.timeout)
         ref_response.raise_for_status()
         commit_sha = ref_response.json()["object"]["sha"]
 
@@ -213,6 +232,7 @@ class GitHubClient:
             blob_response = self.session.post(
                 blob_url,
                 json={"content": file["content"], "encoding": "utf-8"},
+                timeout=self.timeout,
             )
             blob_response.raise_for_status()
             blob_sha = blob_response.json()["sha"]
@@ -224,6 +244,7 @@ class GitHubClient:
         tree_response = self.session.post(
             tree_url,
             json={"base_tree": commit_sha, "tree": tree_data},
+            timeout=self.timeout,
         )
         tree_response.raise_for_status()
         tree_sha = tree_response.json()["sha"]
@@ -233,29 +254,31 @@ class GitHubClient:
         commit_response = self.session.post(
             commit_url,
             json={"message": message, "tree": tree_sha, "parents": [commit_sha]},
+            timeout=self.timeout,
         )
         commit_response.raise_for_status()
         new_commit_sha = commit_response.json()["sha"]
 
         # Atualiza ref
-        self.session.patch(ref_url, json={"sha": new_commit_sha})
+        self.session.patch(ref_url, json={"sha": new_commit_sha}, timeout=self.timeout)
 
     def create_branch(self, branch: str, from_branch: str = "main"):
         """Create a branch from the current tip of another branch."""
         existing_url = (
             f"{self.base_url}/repos/{self.owner}/{self.repo}/git/ref/heads/{branch}"
         )
-        existing = self.session.get(existing_url)
+        existing = self.session.get(existing_url, timeout=self.timeout)
         if existing.status_code == 200:
             return
         if existing.status_code != 404:
             existing.raise_for_status()
         ref_url = f"{self.base_url}/repos/{self.owner}/{self.repo}/git/refs/heads/{from_branch}"
-        ref_response = self.session.get(ref_url)
+        ref_response = self.session.get(ref_url, timeout=self.timeout)
         ref_response.raise_for_status()
         response = self.session.post(
             f"{self.base_url}/repos/{self.owner}/{self.repo}/git/refs",
             json={"ref": f"refs/heads/{branch}", "sha": ref_response.json()["object"]["sha"]},
+            timeout=self.timeout,
         )
         response.raise_for_status()
 
@@ -264,6 +287,7 @@ class GitHubClient:
         response = self.session.post(
             f"{self.base_url}/repos/{self.owner}/{self.repo}/pulls",
             json={"title": title, "body": body, "head": branch, "base": base},
+            timeout=self.timeout,
         )
         response.raise_for_status()
         return response.json()["html_url"]
@@ -273,6 +297,7 @@ class GitHubClient:
         response = self.session.get(
             f"{self.base_url}/repos/{self.owner}/{self.repo}/pulls",
             params={"state": "all", "head": f"{self.owner}:{branch}", "per_page": 1},
+            timeout=self.timeout,
         )
         response.raise_for_status()
         return bool(response.json())

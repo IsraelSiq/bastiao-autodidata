@@ -1,4 +1,5 @@
 from unittest.mock import Mock
+import requests
 
 from src.autonomous import AutonomousRunner
 
@@ -52,3 +53,28 @@ def test_github_client_branch_attempt_detection():
 
     assert client.has_pull_request_for_branch("bastiao/issue-25")
     client.session.get.assert_called_once()
+
+
+def test_runner_reports_github_unavailable():
+    runner = AutonomousRunner.__new__(AutonomousRunner)
+    runner.client = Mock()
+    runner.client.list_issues.side_effect = requests.ConnectionError("network down")
+
+    assert runner.run_once() == {
+        "status": "github_unavailable",
+        "error": "ConnectionError: network down",
+    }
+
+
+def test_format_plan_includes_scope_and_acceptance_criteria():
+    from src.planner import GitHubIssue, Planner
+
+    plan = Planner().build_issue_plan(
+        GitHubIssue(32, "Planner", "- [ ] Add `src/planner.py`", [], "open")
+    )
+
+    rendered = AutonomousRunner._format_plan(plan)
+
+    assert "src/planner.py" in rendered
+    assert "Add `src/planner.py`" in rendered
+    assert "inspect:" in rendered

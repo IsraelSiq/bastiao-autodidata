@@ -4,6 +4,7 @@ import os
 import re
 import subprocess
 from pathlib import Path
+import requests
 
 from .swe_agent import SWEAgent
 from .env import SandboxEnv
@@ -89,6 +90,23 @@ class AutonomousRunner:
         )
         return True
 
+    @staticmethod
+    def _format_plan(plan) -> str:
+        """Provide the model with the complete planner contract."""
+        criteria = "\n".join(f"- {item}" for item in plan.acceptance_criteria) or "- none"
+        paths = "\n".join(f"- {path}" for path in plan.allowed_paths) or "- none explicitly named"
+        steps = "\n".join(
+            f"- {step.id}: {step.title} ({step.action})" for step in plan.steps
+        )
+        return f"""Allowed paths:
+{paths}
+
+Acceptance criteria:
+{criteria}
+
+Steps:
+{steps}"""
+
     def _issue_paths(self, title: str, body: str) -> set[str]:
         """Extract explicit repository paths from an issue for scope validation."""
         text = f"{title}\n{body}"
@@ -129,7 +147,13 @@ class AutonomousRunner:
         return True
 
     def run_once(self) -> dict:
-        issues = self.client.list_issues(state="open")
+        try:
+            issues = self.client.list_issues(state="open")
+        except requests.RequestException as error:
+            return {
+                "status": "github_unavailable",
+                "error": f"{type(error).__name__}: {error}",
+            }
         processed = 0
         retry = os.getenv("BASTIAO_RETRY_ISSUES", "false").lower() == "true"
         selected_numbers = {
@@ -142,9 +166,17 @@ class AutonomousRunner:
             if selected_numbers and issue.number not in selected_numbers:
                 continue
             branch = f"bastiao/issue-{issue.number}"
-            if not retry and self.client.has_pull_request_for_branch(branch):
-                skipped.add(issue.number)
-                continue
+            if not retry:
+                try:
+                    if self.client.has_pull_request_for_branch(branch):
+                        skipped.add(issue.number)
+                        continue
+                except requests.RequestException as error:
+                    return {
+                        "issue": issue.number,
+                        "status": "github_unavailable",
+                        "error": f"{type(error).__name__}: {error}",
+                    }
             if processed >= int(os.getenv("BASTIAO_MAX_ISSUES", "1")):
                 break
             processed += 1
@@ -164,9 +196,7 @@ class AutonomousRunner:
             solved = agent.solve(
                 issue.title,
                 issue.body or "",
-                plan="\n".join(
-                    f"{step.id}: {step.title} ({step.action})" for step in plan.steps
-                ),
+                plan=self._format_plan(plan),
             )
             files = self._changed_files() if solved else []
             if not solved or not files:

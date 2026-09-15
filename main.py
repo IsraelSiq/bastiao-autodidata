@@ -17,6 +17,7 @@ O Bastiao vai:
 import os
 import logging
 import time
+import requests
 
 from src.autonomous import AutonomousRunner
 
@@ -43,8 +44,19 @@ def main():
     interval = max(300, int(os.getenv("BASTIAO_INTERVAL_SECONDS", "3600")))
     runner = AutonomousRunner(os.environ["BASTIAO_WORKSPACE"])
     while True:
-        result = runner.run_once()
-        print(f"Cycle complete: {result}")
+        try:
+            result = runner.run_once()
+            print(f"Cycle complete: {result}", flush=True)
+        except requests.RequestException as error:
+            logging.getLogger("bastiao.main").error(
+                "GitHub request failed; keeping service alive: %s",
+                error,
+            )
+        except (OSError, ValueError) as error:
+            logging.getLogger("bastiao.main").error(
+                "Cycle failed with recoverable configuration/runtime error: %s",
+                error,
+            )
         time.sleep(interval)
 
 
