@@ -1,5 +1,6 @@
 from unittest.mock import Mock
 import requests
+from src.metrics import CycleMetrics
 
 from src.autonomous import AutonomousRunner
 
@@ -55,9 +56,10 @@ def test_github_client_branch_attempt_detection():
     client.session.get.assert_called_once()
 
 
-def test_runner_reports_github_unavailable():
+def test_runner_reports_github_unavailable(tmp_path):
     runner = AutonomousRunner.__new__(AutonomousRunner)
     runner.client = Mock()
+    runner.metrics = CycleMetrics(str(tmp_path))
     runner.client.list_issues.side_effect = requests.ConnectionError("network down")
 
     assert runner.run_once() == {

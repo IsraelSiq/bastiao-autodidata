@@ -46,3 +46,14 @@ def test_task_state_persists_plan_and_checkpoint(tmp_path):
 
     assert loaded.plan["issue_number"] == 32
     assert loaded.result == "inspection complete"
+
+
+def test_task_state_persists_branch_for_resume(tmp_path):
+    state = TaskExecutionState(issue_number=32, branch="bastiao/issue-32")
+    state.fail("temporary model failure")
+    state.save(str(tmp_path))
+
+    loaded = TaskExecutionState.load(str(tmp_path / "issue-32.json"))
+
+    assert loaded.branch == "bastiao/issue-32"
+    assert loaded.status == "failed"

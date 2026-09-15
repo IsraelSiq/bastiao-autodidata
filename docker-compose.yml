@@ -12,6 +12,7 @@ services:
       OMNIROUTE_URL: http://ollama:11434/v1
     volumes:
       - ./workspace:/workspace/target
+      - ./state:/var/lib/bastiao
     depends_on:
       - ollama
     restart: on-failure:3

@@ -19,6 +19,7 @@ class TaskExecutionState:
     attempts: int = 0
     error: str = ""
     result: str = ""
+    branch: str = ""
     updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def start_step(self) -> None:
