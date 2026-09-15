@@ -18,6 +18,22 @@ Edite `.env` e preencha `GITHUB_TOKEN`. Mantenha `GITHUB_OWNER` e
 `GITHUB_REPO` apontando para o repositorio que deve receber as pull requests.
 Nao coloque tokens, senhas ou URLs privadas em arquivos rastreados.
 
+Mantenha a aprovacao humana habilitada:
+
+```env
+BASTIAO_REQUIRE_APPROVAL=true
+BASTIAO_APPROVAL_FILE=/var/lib/bastiao/approvals.json
+BASTIAO_STATE_DIR=/var/lib/bastiao
+BASTIAO_TEMPERATURE=0.2
+```
+
+Antes de executar uma issue, escreva os numeros aprovados em
+`state/approvals.json`, por exemplo:
+
+```json
+[43]
+```
+
 Baixe o modelo no Ollama:
 
 ```bash
@@ -41,6 +57,14 @@ docker compose --profile agent logs --tail=100 bastiao
 
 O container deve permanecer `Up`. O servico usa `restart: on-failure:3`, portanto
 falhas repetidas nao entram em um loop infinito de reinicio.
+
+Valide tambem os dados persistentes:
+
+```bash
+cat state/approvals.json
+find state/tasks -maxdepth 1 -type f -print
+tail -n 20 state/metrics/cycles.jsonl
+```
 
 ## Atualizacao
 

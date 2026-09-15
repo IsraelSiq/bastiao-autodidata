@@ -10,6 +10,8 @@ docker compose --profile agent config
 Confirme que `GITHUB_TOKEN`, `GITHUB_OWNER`, `GITHUB_REPO` e
 `BASTIAO_WORKSPACE` estao definidos. No Compose, o ultimo e sobrescrito para
 `/workspace/target`.
+Confirme tambem que `state/approvals.json` existe e contem JSON valido quando
+`BASTIAO_REQUIRE_APPROVAL=true`.
 
 ## Erro 401 do GitHub
 
@@ -45,12 +47,22 @@ Nao use o diretorio que contem o codigo do agente como workspace alvo.
 Leia o resultado do ciclo:
 
 - `no_open_issues`: nao havia issue aberta;
+- `pending_approval`: a issue foi selecionada, mas nao foi aprovada;
 - `failed`: o agente nao produziu patch testavel;
+- `rejected_out_of_scope`: foram alterados arquivos fora do escopo;
+- `rejected_by_reviewer`: o Reviewer rejeitou o conteudo ou a sintaxe;
 - `rejected_unsafe_diff`: o patch violou o bloqueio de diff.
 
 Revise o comentario publicado na issue e o log do container antes de repetir o
 ciclo. Nao aumente `BASTIAO_MAX_ITERATIONS` como primeira resposta a um patch
 destrutivo.
+
+Para entender uma retomada, examine o checkpoint e as metricas:
+
+```bash
+cat state/tasks/issue-N.json
+tail -n 20 state/metrics/cycles.jsonl
+```
 
 ## Testes locais
 

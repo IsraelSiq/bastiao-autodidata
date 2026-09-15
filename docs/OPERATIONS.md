@@ -15,6 +15,16 @@ Verifique no GitHub:
 - se os checks da pull request passaram;
 - se nao existe uma pull request duplicada para a mesma issue.
 
+Para autorizar uma issue especifica:
+
+```bash
+printf '[43]\n' > state/approvals.json
+docker compose --profile agent restart bastiao
+```
+
+Confirme no log um ciclo `pending_approval` antes da aprovacao e o inicio do
+SWE-agent somente depois que o numero estiver no arquivo.
+
 ## Ciclo bem-sucedido
 
 O log deve indicar a issue processada e o resultado
@@ -32,6 +42,13 @@ Em `failed`, consulte os logs do modelo e verifique se:
 - o agente nao atingiu `BASTIAO_MAX_ITERATIONS`.
 
 Uma issue sem patch nao deve ser marcada como resolvida automaticamente.
+
+Consulte o checkpoint correspondente e as metricas:
+
+```bash
+cat state/tasks/issue-43.json
+tail -n 20 state/metrics/cycles.jsonl
+```
 
 ## Patch rejeitado
 
