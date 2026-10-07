@@ -52,8 +52,13 @@ Terceiro incremento concluido: retry/backoff limitado para leituras do GitHub
 (sem retry de escritas) e estado persistido em `status.json` com
 `github_unavailable_since`.
 
-Pendentes: retencao/redaction de logs; testes de reinicio e falha de
-dependencias.
+Quarto incremento concluido: redaction de segredos (`src/redaction.py`) em logs,
+saida do ciclo, `cycles.jsonl` e `status.json`; retencao por tamanho de
+`cycles.jsonl` com backups limitados; testes de reinicio e de falha de
+dependencias (recuperacao do estado, 401 sem retry).
+
+Pendentes na #37: validacao em Docker/runtime real e revisao humana da PR antes
+de qualquer operacao continua. Nao ampliar para 24/7 antes disso.
 
 Nao ampliar para 24/7 antes desses itens.
 

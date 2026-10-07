@@ -80,6 +80,43 @@ def test_runner_reports_github_unavailable(tmp_path, monkeypatch):
     assert record["status"] == result["status"]
 
 
+def test_status_survives_restart_and_recovers(tmp_path, monkeypatch):
+    monkeypatch.setenv("BASTIAO_GITHUB_RETRY_ATTEMPTS", "1")
+    runner = AutonomousRunner.__new__(AutonomousRunner)
+    runner.client = Mock()
+    runner.metrics = CycleMetrics(str(tmp_path))
+    runner.client.list_issues.side_effect = requests.ConnectionError("down")
+    runner.run_once()
+    since = runner.metrics.read_status()["github_unavailable_since"]
+
+    restarted = AutonomousRunner.__new__(AutonomousRunner)
+    restarted.client = Mock()
+    restarted.metrics = CycleMetrics(str(tmp_path))
+    assert restarted.metrics.read_status()["github_unavailable_since"] == since
+
+    restarted.client.list_issues.return_value = []
+    result = restarted.run_once()
+
+    assert result["status"] == "no_open_issues"
+    assert "github_unavailable_since" not in restarted.metrics.read_status()
+
+
+def test_runner_does_not_retry_authentication_failure(tmp_path, monkeypatch):
+    monkeypatch.setenv("BASTIAO_GITHUB_RETRY_ATTEMPTS", "3")
+    monkeypatch.setenv("BASTIAO_GITHUB_RETRY_BASE_SECONDS", "0")
+    response = Mock()
+    response.status_code = 401
+    runner = AutonomousRunner.__new__(AutonomousRunner)
+    runner.client = Mock()
+    runner.metrics = CycleMetrics(str(tmp_path))
+    runner.client.list_issues.side_effect = requests.HTTPError(response=response)
+
+    result = runner.run_once()
+
+    assert runner.client.list_issues.call_count == 1
+    assert result["status"] == "github_unavailable"
+
+
 def test_format_plan_includes_scope_and_acceptance_criteria():
     from src.planner import GitHubIssue, Planner
 

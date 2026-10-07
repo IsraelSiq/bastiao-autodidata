@@ -60,8 +60,18 @@ com o ultimo resultado e, enquanto o GitHub estiver indisponivel,
 cat state/metrics/status.json
 ```
 
-Proximos incrementos, ainda pendentes: retencao/redaction de logs; testes de
-reinicio e falha de dependencias.
+O quarto incremento adicionou redaction e retencao. `src/redaction.py` mascara
+tokens GitHub (`ghp_`, `github_pat_`...), chaves `sk-`, cabecalhos
+`Authorization`, pares `token/password/secret/api_key=` e os valores atuais de
+`GITHUB_TOKEN` e `OMNIROUTE_API_KEY`. Isso e aplicado aos logs do processo
+(`main.py`), a linha `Cycle complete` e aos registros de `cycles.jsonl` e
+`status.json`. O mascaramento e por padroes: nao substitui evitar colocar
+segredos em issues, prompts e logs. `cycles.jsonl` e rotacionado quando atinge
+`BASTIAO_METRICS_MAX_BYTES` (padrao 5 MiB), mantendo `BASTIAO_METRICS_BACKUPS`
+arquivos (`cycles.jsonl.1` e o mais recente; padrao 5; 0 descarta o antigo).
+
+Pendentes: validacao em Docker/runtime real e revisao humana antes de operacao
+continua.
 
 Depois de cada incremento: executar testes, revisar a PR e atualizar
 `ROADMAP.md`. Nao executar a etapa seguinte automaticamente.

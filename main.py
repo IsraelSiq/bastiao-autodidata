@@ -20,11 +20,13 @@ import time
 import requests
 
 from src.autonomous import AutonomousRunner
+from src.redaction import install_log_redaction, redact
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
+install_log_redaction()
 
 
 def main():
@@ -46,7 +48,7 @@ def main():
     while True:
         try:
             result = runner.run_once()
-            print(f"Cycle complete: {result}", flush=True)
+            print(f"Cycle complete: {redact(str(result))}", flush=True)
         except requests.RequestException as error:
             logging.getLogger("bastiao.main").error(
                 "GitHub request failed; keeping service alive: %s",
