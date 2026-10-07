@@ -127,3 +127,14 @@ O teste controlado da issue #43 terminou com a PR #46 contendo somente src/healt
 Instalacao: Open WebUI > Workspace > Tools > `+` > colar o conteudo do arquivo > Salvar. Em Valves, ajuste `allowed_repos` e, se quiser repos privados, informe um token fine-grained somente leitura (Contents, Issues, Pull requests: Read). Depois, no chat, ative a Tool e use um modelo com suporte a tool calling (ex.: `qwen3:8b`).
 
 Exemplos: "leia https://github.com/IsraelSiq/bastiao-autodidata/issues/37", "liste as issues abertas e proponha a proxima", "leia o ROADMAP.md".
+
+## Roteamento automatico de modelos (Bastiao Auto)
+
+`openwebui/auto_router_pipe.py` e uma Function (Pipe) do Open WebUI que cria o modelo **Bastiao Auto**. Para cada mensagem ele escolhe, por regras simples (sem chamar um LLM extra, para nao trocar modelos na VRAM de 6 GB):
+
+- codigo, erros, git, docker, SQL etc. -> `qwen2.5-coder:7b`;
+- analise, comparacao, planejamento, perguntas "por que", imagens ou conversas longas -> `qwen3:8b`;
+- mensagens curtas e casuais -> `llama3.2:3b`;
+- demais casos -> `qwen3:8b`.
+
+Instalacao: Open WebUI > Admin Panel > Functions > `+` > colar o arquivo > Salvar e ativar. Depois selecione "Bastiao Auto" no seletor de modelos. Valves permitem trocar os modelos, a URL do Ollama (padrao `http://ollama:11434`, rede Docker) e esconder a linha "[Bastiao Auto: modelo - motivo]". Limites: a escolha e heuristica (palavras-chave em portugues/ingles) e considera apenas a ultima mensagem do usuario; trocar de modelo no meio da conversa recarrega pesos e pode demorar.
