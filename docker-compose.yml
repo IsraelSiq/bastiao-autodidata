@@ -10,6 +10,13 @@ services:
     environment:
       BASTIAO_WORKSPACE: /workspace/target
       OMNIROUTE_URL: http://ollama:11434/v1
+      BASTIAO_MEMORY_LIMIT_MB: ${BASTIAO_MEMORY_LIMIT_MB:-2048}
+      BASTIAO_CPU_LIMIT_SECONDS: ${BASTIAO_CPU_LIMIT_SECONDS:-45}
+    mem_limit: ${BASTIAO_CONTAINER_MEMORY_LIMIT:-4g}
+    cpus: ${BASTIAO_CONTAINER_CPUS:-2.0}
+    pids_limit: ${BASTIAO_CONTAINER_PIDS_LIMIT:-256}
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=536870912,mode=1777
     volumes:
       - ./workspace:/workspace/target
       - ./state:/var/lib/bastiao
