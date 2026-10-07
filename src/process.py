@@ -5,7 +5,8 @@ import os
 import signal
 import subprocess
 import sys
-from typing import Optional
+import threading
+from typing import BinaryIO, Optional
 
 SECRET_ENV_NAMES = {"GITHUB_TOKEN", "OMNIROUTE_API_KEY"}
 SECRET_ENV_MARKERS = ("TOKEN", "SECRET", "PASSWORD", "API_KEY")
@@ -17,6 +18,7 @@ class ProcessResult:
     stdout: str
     stderr: str
     timed_out: bool = False
+    output_truncated: bool = False
 
 
 def sanitized_env(extra: Optional[dict] = None) -> dict:
@@ -59,7 +61,31 @@ def kill_tree(process: subprocess.Popen) -> None:
             os.killpg(process.pid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError, OSError):
         pass
-    process.kill()
+    if process.poll() is None:
+        try:
+            process.kill()
+        except ProcessLookupError:
+            pass
+
+
+def _drain_stream(
+    stream: BinaryIO,
+    max_output_bytes: int,
+    result: list[tuple[bytes, bool]],
+    errors: list[OSError],
+) -> None:
+    output = bytearray()
+    truncated = False
+    try:
+        while chunk := stream.read(65536):
+            remaining = max_output_bytes - len(output)
+            if remaining > 0:
+                output.extend(chunk[:remaining])
+            if len(chunk) > remaining:
+                truncated = True
+    except OSError as error:
+        errors.append(error)
+    result.append((bytes(output), truncated))
 
 
 def run_bounded(
@@ -69,8 +95,11 @@ def run_bounded(
     env: Optional[dict] = None,
     memory_mb: int = 0,
     cpu_seconds: int = 0,
+    max_output_bytes: int = 1_000_000,
 ) -> ProcessResult:
-    """Run argv with a timeout that also kills child processes it spawned."""
+    """Run argv with bounded output and a timeout that kills its child processes."""
+    if max_output_bytes < 0:
+        raise ValueError("max_output_bytes must be non-negative")
     options: dict = {}
     if sys.platform == "win32":
         options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
@@ -85,16 +114,55 @@ def run_bounded(
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True,
         **options,
     )
+    stdout_result: list[tuple[bytes, bool]] = []
+    stderr_result: list[tuple[bytes, bool]] = []
+    reader_errors: list[OSError] = []
+    readers = [
+        threading.Thread(
+            target=_drain_stream,
+            args=(process.stdout, max_output_bytes, stdout_result, reader_errors),
+            daemon=True,
+        ),
+        threading.Thread(
+            target=_drain_stream,
+            args=(process.stderr, max_output_bytes, stderr_result, reader_errors),
+            daemon=True,
+        ),
+    ]
+    for reader in readers:
+        reader.start()
+
+    timed_out = False
     try:
-        stdout, stderr = process.communicate(timeout=timeout)
-        return ProcessResult(process.returncode, stdout, stderr)
+        process.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
+        timed_out = True
         kill_tree(process)
         try:
-            stdout, stderr = process.communicate(timeout=5)
+            process.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            stdout, stderr = "", ""
-        return ProcessResult(None, stdout or "", stderr or "", timed_out=True)
+            process.kill()
+            process.wait()
+
+    for reader in readers:
+        reader.join(timeout=5)
+    if any(reader.is_alive() for reader in readers):
+        kill_tree(process)
+        for reader in readers:
+            reader.join(timeout=5)
+        if any(reader.is_alive() for reader in readers):
+            raise RuntimeError("Could not finish reading subprocess output")
+    if reader_errors:
+        raise reader_errors[0]
+
+    stdout_bytes, stdout_truncated = stdout_result[0]
+    stderr_bytes, stderr_truncated = stderr_result[0]
+    return ProcessResult(
+        None if timed_out else process.returncode,
+        stdout_bytes.decode("utf-8", errors="replace"),
+        stderr_bytes.decode("utf-8", errors="replace"),
+        timed_out=timed_out,
+        output_truncated=stdout_truncated or stderr_truncated,
+    )

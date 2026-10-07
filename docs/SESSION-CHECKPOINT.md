@@ -1,45 +1,42 @@
-# Checkpoint da sessao — 2026-09-15
+# Checkpoint da sessao ? 2026-10-07
 
 ## Estado confirmado
 
-- PRs historicas ate a #47: mergeadas na main.
-- PR #48: mergeada na main.
-- Commit de merge: `6312fc4`.
-- Branch implementada: `feat/quality-gate`.
-- Proxima fase ainda nao iniciada: issue #37.
-- Container Bastiao: deve permanecer parado ate nova aprovacao humana.
+- `main`: commit `94e107b`.
+- PR #49: mergeada em 2026-10-07; adicionou incrementos funcionais da issue #37.
+- Issues #30 e #37: abertas no GitHub; nenhuma PR estava aberta no inicio desta retomada.
+- O container Bastiao estava ativo quando consultado; nenhuma operacao reiniciou, reconstruiu ou atualizou esse servico.
+- O checkout operacional tinha trabalho local nao commitado e permaneceu intocado.
+- Todas as validacoes ocorreram em clone, imagem e containers descartaveis.
+- O ultimo ciclo observado era `no_open_issues`; issue #43 foi ignorada por ja ter PR. A aprovacao persistente ainda mencionava #43 e nao foi reutilizada nem alterada.
 
-## Entregas da PR #48
+## Validacao concluida
 
-- Quality Gate deterministico antes de commit/PR.
-- Bloqueio quando testes, compileall, lint, typecheck ou diff check falham.
-- Escopo estrito e rejeicao de planos sem caminhos permitidos.
-- Abortamento imediato apos escrita fora do escopo.
-- Timeout por comando.
-- Limite de comandos por tarefa.
-- Limite de saida capturada.
-- Limite de bytes por arquivo escrito.
+- `docker compose config --quiet`: passou.
+- Baseline anterior: suite completa em container descartavel: 77 testes passaram; `compileall` passou.
+- Branch `fix/bounded-subprocess-output`: suite completa em Docker Linux: 80 testes passaram; `compileall` passou. Pydantic foi instalado somente dentro do container efemero para coletar os testes.
+- Testes focados em subprocessos, ferramentas e Quality Gate sob `--memory=512m --cpus=1`: 25 passaram.
+- Teste de stress gerou 32 MiB em stdout; a branch reteve exatamente 1.000.000 bytes, sinalizou truncamento e terminou com sucesso sob os limites do container.
+- Os testes de rlimit de CPU e memoria passaram em Linux. Suite local Windows: 78 passaram, 2 ignorados (rlimits POSIX-only).
+- Healthcheck somente leitura confirmou Ollama, ChromaDB e workspace acessiveis; a sonda GitHub nao recebeu credenciais e nao confirmou conectividade autenticada.
+- Nenhum ciclo de agente, alteracao de aprovacao ou escrita no workspace de producao foi iniciado.
 
-## Validacao
+## Correcao e status do branch
 
-- 38 testes passaram na branch da PR.
-- `python -m compileall -q .` passou.
-- `git diff --check` passou.
-- Nao havia check run configurado no GitHub para a PR #48.
+A prova original reproduziu uma lacuna em `src/process.py`: `communicate()` acumulou 32 MiB de stdout antes de a ferramenta truncar o texto devolvido. A busca de codigo tambem usava captura sem limite e nao removia credenciais do ambiente do processo.
 
-## Pendente
+A branch `fix/bounded-subprocess-output` (commit `27fdb39`) adiciona drenagem concorrente de stdout/stderr com teto em bytes por stream, continua drenando saida excedente para nao bloquear pipes, sinaliza truncamento, limita a saida da busca e usa ambiente sanitizado. O Quality Gate registra quando a captura foi truncada. A validacao Linux/Docker confirmou a correcao; a implantacao ativa nao recebeu esse codigo.
 
-Na issue #30: limites de CPU, memoria, processos filhos, arquivos temporarios e limpeza garantida, com testes dependentes do Docker/runtime.
+## Pendencias para retomar
 
-No roadmap: #37 observabilidade; #36 providers/fallback; #35 memoria persistente; #38 pipeline autodidata.
+1. Revisar/mergear a PR de saida limitada depois de conferir todos os diffs e evidencias.
+2. Para concluir #30, decidir com o operador os limites adequados do Compose. A configuracao atual nao define `mem_limit`, `cpus` ou `pids_limit`, nem quota de disco para temporarios/workspace.
+3. Revisar #37 e concluir sua revisao humana; nao habilitar 24/7.
+4. Somente depois iniciar #36 (providers/fallback).
 
-## Como retomar
+## Guardas operacionais
 
-1. Ler `ROADMAP.md` e `docs/OPERATIONS.md`.
-2. Verificar que a main contem `6312fc4`.
-3. Confirmar que o container esta parado.
-4. Selecionar e aprovar explicitamente uma issue pequena.
-5. Implementar apenas um incremento da #37.
-6. Testar, revisar e mergear manualmente antes de avancar.
-
-Nao iniciar 24/7, merge automatico, OpenHands, fallback ilimitado ou memoria persistente antes dos gates previstos.
+- Nao limpar, resetar ou sobrescrever o checkout operacional com mudancas locais.
+- Nao iniciar o container/agente ativo, nao escrever em `state/approvals.json` e nao reutilizar a aprovacao antiga.
+- Nao alterar o container ativo; qualquer teste deve usar clone, imagem e container descartaveis.
+- Nao habilitar 24/7, merge automatico, dependencia instalada automaticamente ou fallback ilimitado.

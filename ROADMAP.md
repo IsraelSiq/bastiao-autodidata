@@ -1,98 +1,76 @@
 # Roadmap do Bastiao Autodidata
 
-Este documento registra a ordem de evolucao recomendada, o estado validado do protocolo e o ponto exato de retomada.
+Este documento registra a ordem de evolucao recomendada, o estado verificado do protocolo e o ponto seguro de retomada.
 
-## Estado validado na main
+## Estado da main em 2026-10-07
 
-A main contem as PRs historicas ate a PR #48, incluindo aprovacao humana, Planner deterministico, workspace isolado, Executor restrito, Reviewer, estado persistente, retomada por checkpoint, Quality Gate, escopo estrito, limites de comandos/timeout/saida/tamanho de arquivo e publicacao sem merge automatico.
+A `main` esta no commit `94e107b`. A PR #49 foi mergeada em 2026-10-07 e adicionou os incrementos de observabilidade da issue #37: identificador por ciclo, healthcheck, retry/backoff somente em leituras idempotentes, estado operacional, redaction/retencao e testes de recuperacao.
 
-A PR #48 foi mergeada em 2026-09-15 pelo commit 6312fc4. Ela entregou os commits e336d1a, 568b7ea e 662bdb6.
+As issues #30 e #37 permanecem abertas no GitHub. Nao ha PR aberta no momento deste checkpoint. A validacao nesta retomada foi feita em clone/imagem descartaveis; a implantacao e o checkout local existentes no servidor foram preservados.
 
-## O que foi validado
+## O que ja foi validado
 
-O teste controlado da issue #43 foi concluido em workspace limpo. A PR #46 conteve exatamente:
+- PR #49 mergeada na `main`; a suite no container descartavel passou com 77 testes e `compileall` passou.
+- `docker compose config --quiet` passou.
+- A suite focada de limites, health, redaction e retry passou com 32 testes sob limites Docker de 512 MiB e 1 CPU.
+- Healthchecks somente leitura confirmaram Ollama, ChromaDB e workspace acessiveis. A sonda GitHub nao recebeu credenciais e, portanto, nao foi validada como conectada.
+- A suite completa local da branch de correcao passou com 78 testes e 2 skips; `compileall` e `git diff --check` passaram.
+- Nenhum teste ou comando iniciou um ciclo do agente, atualizou aprovacoes, reiniciou o container ativo ou publicou alteracoes no workspace de producao.
 
-```python
-HEALTH_MARKER = "ok"
-```
+## Ponto atual
 
-As PRs #45 e #46 foram revisadas e mergeadas manualmente. Na fase da PR #48, 38 testes passaram, alem de compileall e git diff --check.
+### 1. Issue #34 ? Quality Gate real ? concluida
 
-## Ponto de parada atual
+O gate em `src/quality_gate.py` executa verificacoes aplicaveis, registra retorno, duracao, timeout e saida limitada, e bloqueia publicacao quando falha.
 
-A sessao foi encerrada logo apos o merge da PR #48. Nenhuma implementacao da issue #37 foi iniciada. O container Bastiao deve permanecer parado ate nova issue ser escolhida e aprovada explicitamente.
+### 2. Reforco de escopo e abortamento ? concluido
 
-CPU e memoria so possuem limite opcional em POSIX (nao no Windows) e ainda nao foram validados em Docker/runtime real; nao devem ser considerados concluidos.
+`strict_scope` rejeita planos sem caminhos permitidos, bloqueia escritas fora do escopo e aborta imediatamente apos violacao.
+
+### 3. Issue #30 ? Limites do sandbox ? parcialmente concluida
+
+Implementado: timeout por comando com encerramento de processos filhos, limite de comandos, limite de caracteres retornados, limite por arquivo escrito, diretorio temporario por tarefa, remocao de credenciais do ambiente, e limites opcionais POSIX de memoria/CPU.
+
+A validacao encontrou uma lacuna: `communicate()` acumulava a saida completa do subprocesso antes de truncar a resposta. Em container descartavel com limite de 512 MiB, uma prova controlada capturou 32 MiB de stdout apesar do limite de caracteres da ferramenta. A busca de codigo tambem usava `subprocess.run(capture_output=True)` sem o ambiente sanitizado.
+
+A branch de correcao substituiu essa captura por drenagem concorrente com limite em bytes por stream, continuou drenando para evitar pipe bloqueado, sinaliza truncamento e encaminhou a busca de codigo pelo executor sanitizado. A imagem da branch foi validada em container descartavel Linux, incluindo saida de 32 MiB, rlimit de CPU/memoria e a suite completa. Nenhuma alteracao foi aplicada ao servico ativo.
+
+Ainda pendente para fechar #30: definir e validar limites operacionais de memoria/CPU/processos/disco no Compose; o Compose atual nao define `mem_limit`, `cpus` ou `pids_limit`, e nao limita disco de temporarios/workspace. Nao escolher valores de producao sem confirmar a capacidade e o perfil do servidor.
+
+### 4. Issue #37 ? Observabilidade operacional ? implementada, validacao/revisao pendentes
+
+A PR #49 entregou `cycle_id`, healthcheck read-only, retry/backoff limitado para leituras do GitHub, `status.json`, redaction, rotacao e testes de recuperacao/falha de dependencia. A suite e os healthchecks foram exercitados em clone/container descartavel.
+
+A issue permanece aberta para revisao humana/merge e confirmacao operacional final. Nao iniciar operacao continua ou modo 24/7 antes disso.
 
 ## Proxima sequencia
 
-### 1. Issue #34 — Quality Gate real — concluida
-
-O gate em src/quality_gate.py executa checks aplicaveis, registra retorno, duracao, timeout e saida limitada, e bloqueia publicacao com quality_gate_failed.
-
-### 2. Reforco de escopo e abortamento — concluido
-
-strict_scope rejeita planos sem caminhos permitidos, bloqueia escritas fora do escopo e aborta imediatamente apos violacao.
-
-### 3. Issue #30 — Limites do sandbox — parcialmente concluida
-
-Entregue: timeout por comando (com encerramento de processos filhos), limite de comandos, limite de saida e limite de bytes por arquivo, diretorio temporario por tarefa com limpeza garantida, ambiente sem credenciais para comandos do modelo e Quality Gate, e limites opcionais de memoria/CPU em POSIX (`src/process.py`).
-
-Pendente: validacao especifica do Docker/runtime (incluindo `mem_limit`/`cpus` no Compose e os rlimits em Linux).
-
-### 4. Issue #37 — Observabilidade operacional — em andamento
-
-Primeiro incremento concluido: cada ciclo recebe um UUID `cycle_id` retornado
-pelo runner e persistido junto ao resultado em `cycles.jsonl`.
-
-Segundo incremento concluido: `python -m src.health` verifica GitHub, Ollama,
-workspace e ChromaDB (opcional) de forma somente leitura.
-
-Terceiro incremento concluido: retry/backoff limitado para leituras do GitHub
-(sem retry de escritas) e estado persistido em `status.json` com
-`github_unavailable_since`.
-
-Quarto incremento concluido: redaction de segredos (`src/redaction.py`) em logs,
-saida do ciclo, `cycles.jsonl` e `status.json`; retencao por tamanho de
-`cycles.jsonl` com backups limitados; testes de reinicio e de falha de
-dependencias (recuperacao do estado, 401 sem retry).
-
-Pendentes na #37: validacao em Docker/runtime real e revisao humana da PR antes
-de qualquer operacao continua. Nao ampliar para 24/7 antes disso.
-
-Nao ampliar para 24/7 antes desses itens.
-
-### 5. Issue #36 — Providers e fallback
-
-Criar interface comum, selecao por capacidade, timeout, erros e fallback limitado, sem loops ou custos ilimitados.
-
-### 6. Issue #35 — Memoria persistente
-
-Integrar Chroma com categorias e isolamento por projeto, com fallback explicito.
-
-### 7. Issue #38 — Pipeline autodidata
-
-Somente depois: pesquisa com fontes, evidencias, agenda, exercicios, avaliacao reproduzivel e revisao espacada.
+1. Concluir testes Docker/runtime da branch de saida limitada e revisar a PR.
+2. Resolver, com o operador, limites de recursos adequados para o Compose e o servidor antes de declarar #30 concluida.
+3. Revisar/fechar #30 e #37 somente quando os respectivos criterios e evidencias estiverem satisfeitos.
+4. Depois, avancar para #36 ? providers e fallback limitado, sem loops ou custos ilimitados.
+5. Em seguida, #35 ? memoria persistente, com isolamento por projeto e fallback explicito.
+6. Por ultimo, #38 ? pipeline autodidata, com fontes, evidencias e avaliacao reproduzivel.
 
 ## Bloqueios de seguranca
 
-- nao executar em modo 24/7 sem supervisao;
+- nao reiniciar, reconstruir ou substituir o container existente durante validacao;
+- nao iniciar ciclo do agente nem reaproveitar aprovacao persistida de issue anterior;
+- nao operar em modo 24/7 sem supervisao;
 - nao fazer merge automatico;
 - nao instalar dependencias automaticamente;
 - nao usar fallback ilimitado;
 - nao integrar OpenHands;
-- nao tratar complete como prova de sucesso;
+- nao tratar `complete` como prova de sucesso;
 - manter revisao humana antes do merge.
 
 ## Procedimento de retomada
 
-1. verificar issues #30, #34, #35, #36, #37 e #38;
-2. confirmar PR #48 na main;
-3. confirmar container parado;
-4. criar workspace limpo baseado na main;
-5. aprovar apenas a issue em teste;
-6. implementar um incremento da #37;
-7. testar e revisar a PR manualmente;
-8. atualizar este documento.
+1. verificar a `main`, issues e PRs abertas;
+2. inspecionar o estado do container e do checkout de producao sem modifica-los;
+3. trabalhar em clone/branch isolados;
+4. executar a suite e a validacao Docker em container descartavel;
+5. pedir aprovacao antes de aplicar mudancas na implantacao ativa;
+6. atualizar este documento e o checkpoint apos cada marco validado.
 
-Estado persistente: BASTIAO_STATE_DIR, normalmente /var/lib/bastiao no container e ./state no host.
+Estado persistente do agente: `BASTIAO_STATE_DIR`, normalmente `/var/lib/bastiao` no container e `./state` no host.

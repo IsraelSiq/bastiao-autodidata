@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from src.process import ProcessResult
 from src.tools import ToolHandler
 
 
@@ -73,3 +74,18 @@ def test_tool_handler_reports_configured_timeout(tmp_path: Path):
 
 def test_tool_handler_accepts_completion_action(tmp_path: Path):
     assert ToolHandler(str(tmp_path)).execute("complete") == "OK: Completion requested"
+
+
+def test_tool_handler_bounds_search_output(tmp_path: Path, monkeypatch):
+    handler = ToolHandler(str(tmp_path), max_output_chars=32)
+
+    def fake_run_bounded(argv, **kwargs):
+        assert argv[:2] == ["grep", "-r"]
+        assert kwargs["max_output_bytes"] == 128
+        assert "GITHUB_TOKEN" not in kwargs["env"]
+        return ProcessResult(0, "needle\n" * 50, "")
+
+    monkeypatch.setattr("src.tools.run_bounded", fake_run_bounded)
+    output = handler.search_code("needle")
+
+    assert "truncated at 32 characters" in output

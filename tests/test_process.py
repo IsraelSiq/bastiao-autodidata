@@ -32,6 +32,26 @@ def test_run_bounded_returns_output(tmp_path: Path):
     assert not result.timed_out
 
 
+def test_run_bounded_caps_stdout_and_stderr_while_draining_them(tmp_path: Path):
+    code = (
+        "import os\n"
+        "for _ in range(2048):\n"
+        "    os.write(1, b'x' * 1024)\n"
+        "    os.write(2, b'y' * 1024)\n"
+    )
+    result = run_bounded(
+        [sys.executable, "-c", code],
+        str(tmp_path),
+        timeout=20,
+        max_output_bytes=1024,
+    )
+
+    assert result.returncode == 0
+    assert len(result.stdout.encode("utf-8")) == 1024
+    assert len(result.stderr.encode("utf-8")) == 1024
+    assert result.output_truncated
+
+
 def test_run_bounded_kills_child_processes_on_timeout(tmp_path: Path):
     marker = tmp_path / "grandchild.txt"
     code = (
@@ -91,3 +111,16 @@ def test_memory_limit_is_enforced(tmp_path: Path):
 
     assert result.returncode != 0
     assert "MemoryError" in result.stderr
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="rlimits are POSIX-only")
+def test_cpu_limit_is_enforced(tmp_path: Path):
+    result = run_bounded(
+        [sys.executable, "-c", "while True: pass"],
+        str(tmp_path),
+        timeout=10,
+        cpu_seconds=1,
+    )
+
+    assert result.returncode != 0
+    assert not result.timed_out
