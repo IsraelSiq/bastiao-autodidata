@@ -24,7 +24,9 @@ O fluxo implantado usa:
 - sandbox com ambiente sanitizado, execucao limitada (`src/process.py`) e
   limpeza do diretorio temporario por tarefa;
 - Tool do Open WebUI somente leitura (`openwebui/github_reader_tool.py`) para o
-  chat ler links, issues, PRs e arquivos do GitHub.
+  chat ler links, issues, PRs e arquivos do GitHub;
+- Function do Open WebUI (`openwebui/auto_router_pipe.py`) que escolhe
+  automaticamente o modelo local para cada solicitacao.
 
 O protocolo continua experimental. A qualidade da alteracao depende do modelo e
 toda pull request deve passar por revisao humana antes do merge.
