@@ -2,10 +2,11 @@
 
 from dataclasses import dataclass
 import json
-import subprocess
 import sys
 import time
 from pathlib import Path
+
+from .process import run_bounded, sanitized_env
 
 
 @dataclass(frozen=True)
@@ -84,36 +85,23 @@ class QualityGate:
         for name, command in self._commands():
             started = time.monotonic()
             try:
-                completed = subprocess.run(
+                completed = run_bounded(
                     command,
-                    cwd=self.workspace,
-                    capture_output=True,
-                    text=True,
+                    cwd=str(self.workspace),
                     timeout=self.timeout_seconds,
-                    check=False,
+                    env=sanitized_env(),
                 )
+                duration = round(time.monotonic() - started, 3)
                 output = (completed.stdout + completed.stderr).strip()
                 checks.append(
                     GateCheck(
                         name=name,
                         command=command,
-                        passed=completed.returncode == 0,
+                        passed=not completed.timed_out and completed.returncode == 0,
                         returncode=completed.returncode,
-                        duration_seconds=round(time.monotonic() - started, 3),
+                        duration_seconds=duration,
                         output=output[-10000:],
-                    )
-                )
-            except subprocess.TimeoutExpired as error:
-                output = self._as_text(error.stdout) + self._as_text(error.stderr)
-                checks.append(
-                    GateCheck(
-                        name=name,
-                        command=command,
-                        passed=False,
-                        returncode=None,
-                        duration_seconds=round(time.monotonic() - started, 3),
-                        output=output[-10000:],
-                        timed_out=True,
+                        timed_out=completed.timed_out,
                     )
                 )
             except OSError as error:
@@ -128,11 +116,3 @@ class QualityGate:
                     )
                 )
         return QualityGateResult(all(check.passed for check in checks), checks)
-
-    @staticmethod
-    def _as_text(value: str | bytes | None) -> str:
-        if value is None:
-            return ""
-        if isinstance(value, bytes):
-            return value.decode("utf-8", errors="replace")
-        return value

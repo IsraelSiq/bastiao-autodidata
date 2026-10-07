@@ -7,6 +7,7 @@ from pathlib import Path
 import requests
 import json
 import time
+import uuid
 
 from .swe_agent import SWEAgent
 from .env import SandboxEnv
@@ -18,6 +19,7 @@ from .task_state import TaskExecutionState
 from .metrics import CycleMetrics
 from .reviewer import Reviewer
 from .quality_gate import QualityGate
+from .retry import retry_transient
 
 
 class AutonomousRunner:
@@ -167,15 +169,25 @@ Steps:
                     return False
         return True
 
+    @staticmethod
+    def _with_retry(func):
+        """Retry idempotent GitHub reads; writes are never retried to avoid duplicates."""
+        return retry_transient(
+            func,
+            attempts=int(os.getenv("BASTIAO_GITHUB_RETRY_ATTEMPTS", "3")),
+            base_delay=float(os.getenv("BASTIAO_GITHUB_RETRY_BASE_SECONDS", "1")),
+        )
+
     def run_once(self) -> dict:
         started = time.monotonic()
         result = self._run_once()
-        self.metrics.record(result, time.monotonic() - started)
-        return result
+        summary = {"cycle_id": str(uuid.uuid4()), **result}
+        self.metrics.record(summary, time.monotonic() - started)
+        return summary
 
     def _run_once(self) -> dict:
         try:
-            issues = self.client.list_issues(state="open")
+            issues = self._with_retry(lambda: self.client.list_issues(state="open"))
         except requests.RequestException as error:
             return {
                 "status": "github_unavailable",
@@ -195,7 +207,9 @@ Steps:
             branch = f"bastiao/issue-{issue.number}"
             if not retry:
                 try:
-                    if self.client.has_pull_request_for_branch(branch):
+                    if self._with_retry(
+                        lambda: self.client.has_pull_request_for_branch(branch)
+                    ):
                         skipped.add(issue.number)
                         continue
                 except requests.RequestException as error:
@@ -238,35 +252,37 @@ Steps:
             state.start_step()
             state.save(self.state_dir)
 
+            env = SandboxEnv(
+                str(self.workspace),
+                allowed_paths=plan.allowed_paths,
+                strict_scope=True,
+                command_timeout_seconds=int(
+                    os.getenv("BASTIAO_COMMAND_TIMEOUT_SECONDS", "60")
+                ),
+                max_output_chars=int(os.getenv("BASTIAO_MAX_OUTPUT_CHARS", "10000")),
+                max_commands=int(os.getenv("BASTIAO_MAX_COMMANDS", "100")),
+                max_write_bytes=int(os.getenv("BASTIAO_MAX_WRITE_BYTES", "1000000")),
+                memory_limit_mb=int(os.getenv("BASTIAO_MEMORY_LIMIT_MB", "0")),
+                cpu_limit_seconds=int(os.getenv("BASTIAO_CPU_LIMIT_SECONDS", "0")),
+            )
             agent = SWEAgent(
                 model=OmniRouteModel(),
-                env=SandboxEnv(
-                    str(self.workspace),
-                    allowed_paths=plan.allowed_paths,
-                    strict_scope=True,
-                    command_timeout_seconds=int(
-                        os.getenv("BASTIAO_COMMAND_TIMEOUT_SECONDS", "60")
-                    ),
-                    max_output_chars=int(
-                        os.getenv("BASTIAO_MAX_OUTPUT_CHARS", "10000")
-                    ),
-                    max_commands=int(os.getenv("BASTIAO_MAX_COMMANDS", "100")),
-                    max_write_bytes=int(
-                        os.getenv("BASTIAO_MAX_WRITE_BYTES", "1000000")
-                    ),
-                ),
+                env=env,
                 max_iterations=self.max_iterations,
             )
-            solved = agent.solve(
-                issue.title,
-                issue.body or "",
-                plan=(
-                    self._format_plan(plan)
-                    + f"\n\nResume checkpoint: step {state.current_step}, "
-                    f"attempt {state.attempts}. Last result: {state.result or 'none'}. "
-                    f"Previous error: {state.error or 'none'}."
-                ),
-            )
+            try:
+                solved = agent.solve(
+                    issue.title,
+                    issue.body or "",
+                    plan=(
+                        self._format_plan(plan)
+                        + f"\n\nResume checkpoint: step {state.current_step}, "
+                        f"attempt {state.attempts}. Last result: {state.result or 'none'}. "
+                        f"Previous error: {state.error or 'none'}."
+                    ),
+                )
+            finally:
+                env.cleanup()
             files = self._changed_files() if solved else []
             if not solved or not files:
                 state.fail("agent did not produce a patch")

@@ -3,10 +3,14 @@
 Ferramentas que o agente pode usar.
 """
 
+import shutil
 import subprocess
 import shlex
+import tempfile
 from pathlib import Path
 from typing import Optional
+
+from .process import run_bounded, sanitized_env
 
 
 class ToolHandler:
@@ -21,6 +25,8 @@ class ToolHandler:
         max_output_chars: int = 10000,
         max_commands: int = 100,
         max_write_bytes: int = 1_000_000,
+        memory_limit_mb: int = 0,
+        cpu_limit_seconds: int = 0,
     ):
         """Inicializa o handler.
 
@@ -33,10 +39,25 @@ class ToolHandler:
         self.max_output_chars = max_output_chars
         self.max_commands = max_commands
         self.max_write_bytes = max_write_bytes
+        self.memory_limit_mb = memory_limit_mb
+        self.cpu_limit_seconds = cpu_limit_seconds
+        self._temp_dir: Optional[str] = None
         self.command_count = 0
         self.allowed_paths = {
             path.replace("\\", "/").lstrip("./") for path in (allowed_paths or [])
         }
+
+    def _temp_env(self) -> dict:
+        """Point temporary files at a per-task directory removed by cleanup()."""
+        if self._temp_dir is None:
+            self._temp_dir = tempfile.mkdtemp(prefix="bastiao-")
+        return {"TMPDIR": self._temp_dir, "TEMP": self._temp_dir, "TMP": self._temp_dir}
+
+    def cleanup(self) -> None:
+        """Remove the per-task temporary directory; safe to call repeatedly."""
+        if self._temp_dir is not None:
+            shutil.rmtree(self._temp_dir, ignore_errors=True)
+            self._temp_dir = None
 
     def _safe_path(self, path: str) -> Path:
         """Resolve a repository-relative path without allowing traversal."""
@@ -173,27 +194,26 @@ class ToolHandler:
         if self.command_count >= self.max_commands:
             return f"ERROR: Task command limit reached ({self.max_commands})"
         self.command_count += 1
-        try:
-            result = subprocess.run(
-                argv,
-                capture_output=True,
-                text=True,
-                timeout=self.command_timeout_seconds,
-                cwd=str(self.repo_path),
-                check=False,
-            )
-            output = result.stdout
-            if result.stderr:
-                output += "\nSTDERR: " + result.stderr
-            output = output or f"Command exited with code {result.returncode}"
-            if len(output) > self.max_output_chars:
-                output = (
-                    output[: self.max_output_chars]
-                    + f"\n[output truncated at {self.max_output_chars} characters]"
-                )
-            return output
-        except subprocess.TimeoutExpired:
+        result = run_bounded(
+            argv,
+            cwd=str(self.repo_path),
+            timeout=self.command_timeout_seconds,
+            env=sanitized_env(self._temp_env()),
+            memory_mb=self.memory_limit_mb,
+            cpu_seconds=self.cpu_limit_seconds,
+        )
+        if result.timed_out:
             return f"ERROR: Timeout ({self.command_timeout_seconds}s)"
+        output = result.stdout
+        if result.stderr:
+            output += "\nSTDERR: " + result.stderr
+        output = output or f"Command exited with code {result.returncode}"
+        if len(output) > self.max_output_chars:
+            output = (
+                output[: self.max_output_chars]
+                + f"\n[output truncated at {self.max_output_chars} characters]"
+            )
+        return output
 
     def search_code(self, pattern: str) -> str:
         """Busca no codigo.

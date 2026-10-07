@@ -17,6 +17,10 @@ GitHub. Isso reduz risco, mas nao substitui revisao humana.
 - A aprovacao humana e exigida por padrao antes de iniciar a issue.
 - O Reviewer valida escopo, diff, sintaxe Python e requisitos simples de
   constantes antes da criacao da pull request.
+- Comandos executados pelo modelo e o Quality Gate rodam sem `GITHUB_TOKEN` e
+  demais variaveis de credencial no ambiente.
+- Timeout encerra tambem os processos filhos; temporarios por tarefa sao removidos.
+- Segredos sao mascarados em logs e metricas (`src/redaction.py`).
 - Checkpoints e metricas ficam fora do workspace do repositorio.
 - Branches sao criadas a partir de `origin/main`.
 - O agente abre pull requests, mas nao faz merge.
