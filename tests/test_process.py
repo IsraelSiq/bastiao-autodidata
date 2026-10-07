@@ -1,4 +1,5 @@
 import os
+import signal
 import sys
 import time
 from pathlib import Path
@@ -111,6 +112,7 @@ def test_memory_limit_is_enforced(tmp_path: Path):
 
     assert result.returncode != 0
     assert "MemoryError" in result.stderr
+    assert result.limit_exceeded == "memory"
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="rlimits are POSIX-only")
@@ -122,5 +124,6 @@ def test_cpu_limit_is_enforced(tmp_path: Path):
         cpu_seconds=1,
     )
 
-    assert result.returncode != 0
+    assert result.returncode == -getattr(signal, "SIGXCPU", -999)
+    assert result.limit_exceeded == "cpu"
     assert not result.timed_out

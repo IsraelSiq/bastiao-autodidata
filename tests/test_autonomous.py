@@ -179,6 +179,8 @@ def test_runner_exposes_quality_gate_evidence(tmp_path):
     runner = AutonomousRunner.__new__(AutonomousRunner)
     runner.workspace = tmp_path
     runner.quality_gate_timeout = 7
+    runner.memory_limit_mb = 128
+    runner.cpu_limit_seconds = 9
 
     with patch("src.autonomous.QualityGate") as gate_class:
         gate_class.return_value.run.return_value = QualityGateResult(
@@ -196,6 +198,8 @@ def test_runner_exposes_quality_gate_evidence(tmp_path):
         )
         result = runner._run_quality_gate()
 
-    gate_class.assert_called_once_with(tmp_path, timeout_seconds=7)
+    gate_class.assert_called_once_with(
+        tmp_path, timeout_seconds=7, memory_limit_mb=128, cpu_limit_seconds=9
+    )
     assert result["passed"]
     assert result["checks"][-1]["name"] == "git-diff-check"

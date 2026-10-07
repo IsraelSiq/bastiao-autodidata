@@ -1,3 +1,4 @@
+import signal
 from pathlib import Path
 
 from src.process import ProcessResult
@@ -74,6 +75,28 @@ def test_tool_handler_reports_configured_timeout(tmp_path: Path):
 
 def test_tool_handler_accepts_completion_action(tmp_path: Path):
     assert ToolHandler(str(tmp_path)).execute("complete") == "OK: Completion requested"
+
+
+def test_tool_handler_reports_cpu_limit(tmp_path: Path, monkeypatch):
+    handler = ToolHandler(str(tmp_path), cpu_limit_seconds=1)
+    monkeypatch.setattr(
+        "src.tools.run_bounded",
+        lambda *args, **kwargs: ProcessResult(
+            -getattr(signal, "SIGXCPU", 24), "", "", limit_exceeded="cpu"
+        ),
+    )
+
+    assert handler.run_command("python -c pass") == "ERROR: CPU time limit reached (1s)"
+
+
+def test_tool_handler_reports_memory_limit(tmp_path: Path, monkeypatch):
+    handler = ToolHandler(str(tmp_path), memory_limit_mb=128)
+    monkeypatch.setattr(
+        "src.tools.run_bounded",
+        lambda *args, **kwargs: ProcessResult(1, "", "MemoryError", limit_exceeded="memory"),
+    )
+
+    assert handler.run_command("python -c pass") == "ERROR: Memory limit reached (128 MB)"
 
 
 def test_tool_handler_bounds_search_output(tmp_path: Path, monkeypatch):

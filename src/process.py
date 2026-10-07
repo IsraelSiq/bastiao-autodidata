@@ -19,6 +19,7 @@ class ProcessResult:
     stderr: str
     timed_out: bool = False
     output_truncated: bool = False
+    limit_exceeded: Optional[str] = None
 
 
 def sanitized_env(extra: Optional[dict] = None) -> dict:
@@ -43,7 +44,7 @@ def _limits_preexec(memory_mb: int, cpu_seconds: int):
             limit = memory_mb * 1024 * 1024
             resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
         if cpu_seconds > 0:
-            resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
+            resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds + 1))
 
     return apply
 
@@ -165,4 +166,14 @@ def run_bounded(
         stderr_bytes.decode("utf-8", errors="replace"),
         timed_out=timed_out,
         output_truncated=stdout_truncated or stderr_truncated,
+        limit_exceeded=(
+            "memory"
+            if memory_mb > 0 and b"MemoryError" in stderr_bytes
+            else (
+                "cpu"
+                if cpu_seconds > 0
+                and process.returncode == -getattr(signal, "SIGXCPU", -999)
+                else None
+            )
+        ),
     )

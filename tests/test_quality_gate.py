@@ -42,6 +42,29 @@ def test_quality_gate_reports_command_failure(tmp_path: Path):
     assert result.failure_summary() == "git-diff-check: exit 1"
 
 
+def test_quality_gate_reports_resource_limit(tmp_path: Path):
+    gate = QualityGate(tmp_path)
+
+    with patch(
+        "src.quality_gate.run_bounded",
+        return_value=ProcessResult(0, "", "", limit_exceeded="memory"),
+    ):
+        result = gate.run()
+
+    assert not result.passed
+    assert result.checks[-1].limit_exceeded == "memory"
+    assert result.failure_summary() == "git-diff-check: memory resource limit"
+    assert "[memory resource limit reached]" in result.checks[-1].output
+
+
+def test_quality_gate_passes_resource_limits_to_commands(tmp_path: Path):
+    with patch("src.quality_gate.run_bounded", return_value=ProcessResult(0, "", "")) as run:
+        QualityGate(tmp_path, memory_limit_mb=128, cpu_limit_seconds=7).run()
+
+    assert run.call_args.kwargs["memory_mb"] == 128
+    assert run.call_args.kwargs["cpu_seconds"] == 7
+
+
 def test_quality_gate_reports_timeout(tmp_path: Path):
     gate = QualityGate(tmp_path)
 

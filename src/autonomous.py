@@ -42,6 +42,8 @@ class AutonomousRunner:
         self.metrics = CycleMetrics(str(self.state_root / "metrics"))
         self.reviewer = Reviewer()
         self.quality_gate_timeout = int(os.getenv("BASTIAO_QUALITY_GATE_TIMEOUT_SECONDS", "120"))
+        self.memory_limit_mb = int(os.getenv("BASTIAO_MEMORY_LIMIT_MB", "0"))
+        self.cpu_limit_seconds = int(os.getenv("BASTIAO_CPU_LIMIT_SECONDS", "0"))
 
     def _is_approved(self, issue_number: int) -> bool:
         if os.getenv("BASTIAO_REQUIRE_APPROVAL", "true").lower() != "true":
@@ -89,6 +91,8 @@ class AutonomousRunner:
         return QualityGate(
             self.workspace,
             timeout_seconds=self.quality_gate_timeout,
+            memory_limit_mb=self.memory_limit_mb,
+            cpu_limit_seconds=self.cpu_limit_seconds,
         ).run().to_dict()
 
     def _has_safe_diff(self) -> bool:

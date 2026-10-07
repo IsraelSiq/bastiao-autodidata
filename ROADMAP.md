@@ -4,9 +4,9 @@ Este documento registra a ordem de evolucao recomendada, o estado verificado do 
 
 ## Estado da main em 2026-10-07
 
-A `main` esta no commit `94e107b`. A PR #49 foi mergeada em 2026-10-07 e adicionou os incrementos de observabilidade da issue #37: identificador por ciclo, healthcheck, retry/backoff somente em leituras idempotentes, estado operacional, redaction/retencao e testes de recuperacao.
+A PR #50 foi mergeada em 2026-10-07; a `main` usada como base para a retomada esta no commit `95f1f87`. A PR #50 limitou a captura de stdout/stderr antes de reter os dados e encaminhou a busca de codigo pelo executor sanitizado. A PR #49 havia adicionado incrementos de observabilidade da issue #37.
 
-As issues #30 e #37 permanecem abertas no GitHub. Nao ha PR aberta no momento deste checkpoint. A validacao nesta retomada foi feita em clone/imagem descartaveis; a implantacao e o checkout local existentes no servidor foram preservados.
+As issues #30 e #37 continuam abertas no GitHub; nao ha PR aberta para esta branch. A validacao da #50 ocorreu em clone/imagem descartaveis. A implantacao e o checkout local existentes no servidor foram preservados.
 
 ## O que ja foi validado
 
@@ -27,15 +27,21 @@ O gate em `src/quality_gate.py` executa verificacoes aplicaveis, registra retorn
 
 `strict_scope` rejeita planos sem caminhos permitidos, bloqueia escritas fora do escopo e aborta imediatamente apos violacao.
 
-### 3. Issue #30 ? Limites do sandbox ? parcialmente concluida
+### 3. Issue #30 ? Limites do sandbox ? implementacao validada em container, gap de quota pendente
 
-Implementado: timeout por comando com encerramento de processos filhos, limite de comandos, limite de caracteres retornados, limite por arquivo escrito, diretorio temporario por tarefa, remocao de credenciais do ambiente, e limites opcionais POSIX de memoria/CPU.
+Ja existente: timeout por comando com encerramento da arvore de processos, limite de comandos e de saida, limite por arquivo pela ferramenta `write`, diretorio temporario por tarefa, remocao de credenciais do ambiente, rlimits POSIX opcionais, e captura limitada antes de acumular stdout/stderr (PR #50).
+
+Nesta branch `fix/issue-30-compose-limits`, o `.env.example` e o Compose propoem 4 GiB de memoria, 2 CPUs, 256 PIDs para o container Bastiao, `/tmp` tmpfs de 512 MiB, e limites por comando POSIX de 2048 MiB de espaco de enderecamento e 45 segundos de CPU. O limite de CPU fica abaixo do timeout de comando padrao (60 s), para que possa ser observado antes do timeout de parede. O diagnostico diferencia `SIGXCPU` e `MemoryError` e o Quality Gate registra o tipo de limite atingido.
+
+`pids_limit` e um teto agregado do container, nao um cgroup por issue. O fluxo atual executa uma issue por vez, mas filhos/threads de um comando compartilham esse teto. `/tmp` fica limitado a 512 MiB; o volume bind-mounted `workspace/` nao tem quota agregada. `BASTIAO_MAX_WRITE_BYTES` cobre a ferramenta `write`, mas nao impede comandos arbitrarios de escrever diretamente no workspace. Essa limitacao precisa permanecer explicita e exige uma decisao de quota/politica do host antes de considerar #30 totalmente fechada.
 
 A validacao encontrou uma lacuna: `communicate()` acumulava a saida completa do subprocesso antes de truncar a resposta. Em container descartavel com limite de 512 MiB, uma prova controlada capturou 32 MiB de stdout apesar do limite de caracteres da ferramenta. A busca de codigo tambem usava `subprocess.run(capture_output=True)` sem o ambiente sanitizado.
 
 A branch de correcao substituiu essa captura por drenagem concorrente com limite em bytes por stream, continuou drenando para evitar pipe bloqueado, sinaliza truncamento e encaminhou a busca de codigo pelo executor sanitizado. A imagem da branch foi validada em container descartavel Linux, incluindo saida de 32 MiB, rlimit de CPU/memoria e a suite completa. Nenhuma alteracao foi aplicada ao servico ativo.
 
-Ainda pendente para fechar #30: definir e validar limites operacionais de memoria/CPU/processos/disco no Compose; o Compose atual nao define `mem_limit`, `cpus` ou `pids_limit`, e nao limita disco de temporarios/workspace. Nao escolher valores de producao sem confirmar a capacidade e o perfil do servidor.
+Validacao da branch atual: suite focada Windows `39 passed, 2 skipped`; suite completa Windows `82 passed, 2 skipped`; suite completa em Docker Linux `84 passed`; `compileall` passou em Windows e Docker; `git diff --check` passou; `docker compose --profile agent config --quiet` passou no servidor descartavel (com aviso preexistente de `version` obsoleto). Medicao dentro do container descartavel confirmou `memory.max=4294967296`, `cpu.max=200000 100000` (2 CPUs), `pids.max=256` e `/tmp` com 536870912 bytes. A camada de teste instalou Pydantic somente na imagem descartavel; nenhuma dependencia do projeto foi alterada.
+
+Os limites implementados ainda nao foram aplicados ao servico ativo. Permanece sem quota agregada o volume bind-mounted `workspace/`; `pids_limit` continua sendo um teto de container, nao por issue. A issue #30 deve ficar aberta ate que haja politica de disco para o workspace e revisao/merge das evidencias.
 
 ### 4. Issue #37 ? Observabilidade operacional ? implementada, validacao/revisao pendentes
 
@@ -45,12 +51,15 @@ A issue permanece aberta para revisao humana/merge e confirmacao operacional fin
 
 ## Proxima sequencia
 
-1. Concluir testes Docker/runtime da branch de saida limitada e revisar a PR.
-2. Resolver, com o operador, limites de recursos adequados para o Compose e o servidor antes de declarar #30 concluida.
-3. Revisar/fechar #30 e #37 somente quando os respectivos criterios e evidencias estiverem satisfeitos.
+1. Revisar se a politica de quota agregada do bind mount `workspace/` e necessaria antes de fechar #30; documentar explicitamente se ficar fora do escopo de implementacao.
+2. Abrir/revisar PR com as evidencias Linux/Docker; nao alterar o container ativo sem aprovacao operacional especifica.
+3. Revisar/fechar #30 e #37 somente apos os requisitos e evidencias serem aceitos.
 4. Depois, avancar para #36 ? providers e fallback limitado, sem loops ou custos ilimitados.
 5. Em seguida, #35 ? memoria persistente, com isolamento por projeto e fallback explicito.
 6. Por ultimo, #38 ? pipeline autodidata, com fontes, evidencias e avaliacao reproduzivel.
+5. Depois, avancar para #36 ? providers e fallback limitado, sem loops ou custos ilimitados.
+6. Em seguida, #35 ? memoria persistente, com isolamento por projeto e fallback explicito.
+7. Por ultimo, #38 ? pipeline autodidata, com fontes, evidencias e avaliacao reproduzivel.
 
 ## Bloqueios de seguranca
 

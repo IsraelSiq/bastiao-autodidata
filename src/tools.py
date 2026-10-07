@@ -204,6 +204,10 @@ class ToolHandler:
         )
         if result.timed_out:
             return f"ERROR: Timeout ({self.command_timeout_seconds}s)"
+        if result.limit_exceeded == "cpu":
+            return f"ERROR: CPU time limit reached ({self.cpu_limit_seconds}s)"
+        if result.limit_exceeded == "memory":
+            return f"ERROR: Memory limit reached ({self.memory_limit_mb} MB)"
         output = result.stdout
         if result.stderr:
             output += "\nSTDERR: " + result.stderr

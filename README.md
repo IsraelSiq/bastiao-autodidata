@@ -1,4 +1,4 @@
-> **Checkpoint operacional (2026-10-07):** a PR #49 foi mergeada na `main` (commit `94e107b`). Os incrementos #30/#37 passaram na validacao isolada de Docker; resta revisar/mergear a correcao e decidir os limites de recursos do Compose. A implantacao existente nao foi alterada. Veja [`ROADMAP.md`](ROADMAP.md) e [`docs/SESSION-CHECKPOINT.md`](docs/SESSION-CHECKPOINT.md).
+> **Checkpoint operacional (2026-10-07):** PR #50 mergeada na `main` (commit `95f1f87`). Limites Compose e rlimits da issue #30 passaram na validacao Docker descartavel; a quota agregada de `workspace/` continua pendente. Nenhuma alteracao foi aplicada ao servico ativo. Veja [`ROADMAP.md`](ROADMAP.md) e [`docs/SESSION-CHECKPOINT.md`](docs/SESSION-CHECKPOINT.md).
 
 # Bastiao Autodidata
 
@@ -154,7 +154,12 @@ As variaveis documentadas em `.env.example` sao:
 | `BASTIAO_COMMAND_TIMEOUT_SECONDS` | nao | `60` | Timeout de cada comando do sandbox |
 | `BASTIAO_MAX_COMMANDS` | nao | `100` | Maximo de comandos por tarefa |
 | `BASTIAO_MAX_OUTPUT_CHARS` | nao | `10000` | Limite de caracteres devolvidos por comando; stdout/stderr sao limitados antes da captura em memoria |
-| `BASTIAO_MAX_WRITE_BYTES` | nao | `1000000` | Limite de bytes por arquivo escrito |
+| `BASTIAO_MAX_WRITE_BYTES` | nao | `1000000` | Limite de bytes por arquivo escrito pela ferramenta `write` |
+| `BASTIAO_MEMORY_LIMIT_MB` | nao | `2048` | Limite POSIX de espaco de enderecamento por comando; `0` desativa |
+| `BASTIAO_CPU_LIMIT_SECONDS` | nao | `45` | Limite POSIX de CPU por comando; `0` desativa |
+| `BASTIAO_CONTAINER_MEMORY_LIMIT` | nao | `4g` | Limite cgroup de memoria do container Bastiao |
+| `BASTIAO_CONTAINER_CPUS` | nao | `2.0` | Limite agregado de CPUs do container Bastiao |
+| `BASTIAO_CONTAINER_PIDS_LIMIT` | nao | `256` | Maximo de processos/threads no container Bastiao |
 | `BASTIAO_REQUIRE_APPROVAL` | nao | `true` | Exige aprovacao no arquivo persistente antes da execucao |
 | `BASTIAO_APPROVAL_FILE` | nao | `/var/lib/bastiao/approvals.json` | Arquivo JSON com issues aprovadas |
 | `BASTIAO_STATE_DIR` | nao | `/var/lib/bastiao` | Diretorio de checkpoints e metricas |
@@ -162,7 +167,18 @@ As variaveis documentadas em `.env.example` sao:
 | `OMNIROUTE_API_KEY` | nao | vazio | Chave opcional para o endpoint |
 
 Dentro do Compose, `BASTIAO_WORKSPACE` e `OMNIROUTE_URL` sao definidos pelo
-servico para `/workspace/target` e `http://ollama:11434/v1`.
+servico para `/workspace/target` e `http://ollama:11434/v1`. O container Bastiao
+recebe limites agregados de 4 GiB, 2 CPUs e 256 processos/threads; `/tmp` usa tmpfs
+limitado a 512 MiB com `noexec,nosuid`. Os comandos POSIX recebem ainda limites de
+2 GiB de espaco de enderecamento e 45 segundos de CPU em cada subprocesso do sandbox e do Quality Gate. O `pids_limit` vale para o
+container inteiro, nao e um cgroup separado por issue.
+
+O limite de 512 MiB cobre arquivos temporarios em `/tmp`, nao o volume montado em
+`workspace/`. A ferramenta `write` limita cada arquivo, mas comandos executados no
+sandbox podem escrever diretamente no workspace; o Compose ainda nao imp?e quota
+agregada nesse volume. Para atualizar uma instalacao existente, altere os valores
+`BASTIAO_MEMORY_LIMIT_MB` e `BASTIAO_CPU_LIMIT_SECONDS` no `.env` (instalacoes
+antigas podem manter `0`) e valide a configuracao antes de recriar o servico.
 
 Para iniciar pelo roadmap em uma issue especifica, use por exemplo
 `BASTIAO_ISSUE_NUMBERS=29` e registre a aprovacao em
@@ -208,7 +224,7 @@ em [`ROADMAP.md`](ROADMAP.md). A proxima retomada deve seguir esta ordem:
 
 1. **#34 — quality gate real antes de publicar uma PR** — concluida.
 2. **Reforco de escopo e abortamento apos violacao** — concluido.
-3. **#30 — limites de CPU, memoria, processos e saida do sandbox** - parte portavel concluida.
+3. **#30 - limites de CPU, memoria, processos e saida do sandbox** - implementacao e testes Docker descartaveis validados; falta resolver quota de `workspace/` e revisar/mergear.
 4. **#37 — observabilidade, checkpoints e diagnostico operacional** - concluida.
 5. **#36 — abstracao de providers e fallback limitado**.
 6. **#35 — memoria persistente com ChromaDB**.
@@ -231,7 +247,7 @@ Resumo do que ja foi concluido:
 - [x] Teste controlado #43 concluido com a PR #46 contendo somente
   `src/health_marker.py`.
 - [x] Observabilidade (#37): cycle_id, redaction, rotacao, status.json, retry e healthcheck.
-- [x] Limites portaveis do sandbox (#30); limites de CPU/memoria so em POSIX e ainda nao validados em Docker.
+- [x] Limites portaveis e saida limitada do sandbox (#30); Compose e rlimits validados em container Linux descartavel. Quota agregada de `workspace/` permanece pendente.
 - [x] Tool somente leitura do Open WebUI para ler o GitHub.
 - [ ] Memoria persistente (#35), providers/fallback (#36) e pipeline autodidata (#38).
 - [x] Quality Gate com timeout, evidencias e bloqueio de publicacao.
