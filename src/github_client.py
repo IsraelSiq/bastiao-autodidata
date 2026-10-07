@@ -262,22 +262,30 @@ class GitHubClient:
         # Atualiza ref
         self.session.patch(ref_url, json={"sha": new_commit_sha}, timeout=self.timeout)
 
-    def create_branch(self, branch: str, from_branch: str = "main"):
-        """Create a branch from the current tip of another branch."""
+    def create_branch(
+        self, branch: str, from_branch: str = "main", from_sha: str | None = None
+    ):
+        """Create a branch from a named branch or an explicitly approved commit."""
         existing_url = (
             f"{self.base_url}/repos/{self.owner}/{self.repo}/git/ref/heads/{branch}"
         )
         existing = self.session.get(existing_url, timeout=self.timeout)
         if existing.status_code == 200:
+            if from_sha and existing.json()["object"]["sha"] != from_sha:
+                raise ValueError(
+                    f"branch {branch} exists at a different commit than the approved base"
+                )
             return
         if existing.status_code != 404:
             existing.raise_for_status()
-        ref_url = f"{self.base_url}/repos/{self.owner}/{self.repo}/git/refs/heads/{from_branch}"
-        ref_response = self.session.get(ref_url, timeout=self.timeout)
-        ref_response.raise_for_status()
+        if from_sha is None:
+            ref_url = f"{self.base_url}/repos/{self.owner}/{self.repo}/git/refs/heads/{from_branch}"
+            ref_response = self.session.get(ref_url, timeout=self.timeout)
+            ref_response.raise_for_status()
+            from_sha = ref_response.json()["object"]["sha"]
         response = self.session.post(
             f"{self.base_url}/repos/{self.owner}/{self.repo}/git/refs",
-            json={"ref": f"refs/heads/{branch}", "sha": ref_response.json()["object"]["sha"]},
+            json={"ref": f"refs/heads/{branch}", "sha": from_sha},
             timeout=self.timeout,
         )
         response.raise_for_status()

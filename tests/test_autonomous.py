@@ -1,7 +1,9 @@
 import json
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 from uuid import UUID
 import requests
+import pytest
 from src.metrics import CycleMetrics
 
 from src.autonomous import AutonomousRunner
@@ -26,6 +28,29 @@ def test_issue_scope_accepts_explicit_target_file():
         "Create hello.py script",
         "File must be at `src/hello.py`.",
         files,
+    )
+
+
+def test_plan_scope_requires_every_changed_file_to_be_explicitly_allowed():
+    from src.planner import IssuePlan, PlanStep
+
+    plan = IssuePlan(
+        issue_number=29,
+        title="Scope",
+        acceptance_criteria=[],
+        allowed_paths=["src/allowed.py"],
+        steps=[PlanStep("implement", "Implement", "write")],
+    )
+
+    assert AutonomousRunner._has_plan_scope_diff(
+        plan, [{"path": "src/allowed.py", "content": "VALUE = 1\n"}]
+    )
+    assert not AutonomousRunner._has_plan_scope_diff(
+        plan,
+        [
+            {"path": "src/allowed.py", "content": "VALUE = 1\n"},
+            {"path": "tests/unplanned.py", "content": "assert True\n"},
+        ],
     )
 
 
@@ -56,6 +81,40 @@ def test_github_client_branch_attempt_detection():
 
     assert client.has_pull_request_for_branch("bastiao/issue-25")
     client.session.get.assert_called_once()
+
+
+def test_github_branch_creation_uses_approved_base_sha():
+    from src.github_client import GitHubClient
+
+    client = GitHubClient("owner", "repo", "token")
+    client.session = Mock()
+    client.session.get.return_value.status_code = 404
+
+    client.create_branch("bastiao/issue-29", from_sha="approved-base")
+
+    client.session.get.assert_called_once()
+    client.session.post.assert_called_once()
+    assert client.session.post.call_args.kwargs["json"] == {
+        "ref": "refs/heads/bastiao/issue-29",
+        "sha": "approved-base",
+    }
+
+
+def test_github_branch_creation_rejects_existing_branch_at_other_base():
+    import pytest
+    from src.github_client import GitHubClient
+
+    client = GitHubClient("owner", "repo", "token")
+    client.session = Mock()
+    client.session.get.return_value.status_code = 200
+    client.session.get.return_value.json.return_value = {
+        "object": {"sha": "different-base"}
+    }
+
+    with pytest.raises(ValueError, match="different commit"):
+        client.create_branch("bastiao/issue-29", from_sha="approved-base")
+
+    client.session.post.assert_not_called()
 
 
 def test_runner_reports_github_unavailable(tmp_path, monkeypatch):
@@ -203,3 +262,130 @@ def test_runner_exposes_quality_gate_evidence(tmp_path):
     )
     assert result["passed"]
     assert result["checks"][-1]["name"] == "git-diff-check"
+
+
+def test_publication_requires_approval_before_any_github_write(tmp_path, monkeypatch):
+    from src.action_approval import ActionApprovalStore
+
+    runner = AutonomousRunner.__new__(AutonomousRunner)
+    runner.action_approval_store = ActionApprovalStore(
+        tmp_path / "requests.json", tmp_path / "audit.jsonl"
+    )
+    files = [{"path": "src/example.py", "content": "VALUE = 1\n"}]
+    monkeypatch.setenv("BASTIAO_REQUIRE_ACTION_APPROVAL", "true")
+
+    allowed, request = runner._authorize_publication(
+        29, "bastiao/issue-29", "base-sha", files
+    )
+
+    assert not allowed
+    assert request["status"] == "pending"
+
+
+def test_publication_approval_is_bound_to_exact_file_contents(tmp_path, monkeypatch):
+    from src.action_approval import ActionApprovalStore
+
+    monkeypatch.setenv("BASTIAO_REQUIRE_ACTION_APPROVAL", "true")
+    runner = AutonomousRunner.__new__(AutonomousRunner)
+    runner.action_approval_store = ActionApprovalStore(
+        tmp_path / "requests.json", tmp_path / "audit.jsonl"
+    )
+    files = [{"path": "src/example.py", "content": "VALUE = 1\n"}]
+    allowed, request = runner._authorize_publication(
+        29, "bastiao/issue-29", "base-sha", files
+    )
+    assert not allowed
+    runner.action_approval_store.decide(request["request_id"], "reviewer", True)
+
+    changed_files = [{"path": "src/example.py", "content": "VALUE = 2\n"}]
+    changed_allowed, changed_request = runner._authorize_publication(
+        29, "bastiao/issue-29", "base-sha", changed_files
+    )
+    assert not changed_allowed
+    assert changed_request["status"] == "pending"
+
+    allowed, consumed = runner._authorize_publication(
+        29, "bastiao/issue-29", "base-sha", files
+    )
+    assert allowed
+    assert consumed["status"] == "consumed"
+
+    new_base_allowed, new_base_request = runner._authorize_publication(
+        29, "bastiao/issue-29", "new-base-sha", files
+    )
+    assert not new_base_allowed
+    assert new_base_request["status"] == "pending"
+
+
+def test_publication_uses_issue_authorization_by_default(monkeypatch):
+    monkeypatch.delenv("BASTIAO_REQUIRE_ACTION_APPROVAL", raising=False)
+    runner = AutonomousRunner.__new__(AutonomousRunner)
+
+    allowed, request = runner._authorize_publication(
+        29,
+        "bastiao/issue-29",
+        "base-sha",
+        [{"path": "src/example.py", "content": "VALUE = 1\n"}],
+    )
+
+    assert allowed
+    assert request is None
+
+
+@pytest.mark.parametrize("require_action_approval", [True, False])
+def test_runner_publication_obeys_additional_approval_setting(
+    tmp_path, monkeypatch, require_action_approval
+):
+    from src.action_approval import ActionApprovalStore
+
+    monkeypatch.setenv(
+        "BASTIAO_REQUIRE_ACTION_APPROVAL",
+        "true" if require_action_approval else "false",
+    )
+    runner = AutonomousRunner.__new__(AutonomousRunner)
+    runner.client = Mock()
+    runner.client.list_issues.return_value = [
+        SimpleNamespace(number=29, title="Improve planner", body="Update `src/planner.py`")
+    ]
+    runner.client.has_pull_request_for_branch.return_value = False
+    runner.workspace = tmp_path
+    runner.state_root = tmp_path
+    runner.state_dir = str(tmp_path / "tasks")
+    runner.max_iterations = 1
+    runner.action_approval_store = ActionApprovalStore(
+        tmp_path / "requests.json", tmp_path / "audit.jsonl"
+    )
+    runner._is_approved = lambda _issue: True
+    runner._git = Mock(return_value="approved-base")
+    runner.planner = Mock()
+    runner.planner.build_issue_plan.return_value = SimpleNamespace(
+        allowed_paths=["src/planner.py"]
+    )
+    runner._format_plan = Mock(return_value="plan")
+    runner._changed_files = lambda: [{"path": "src/planner.py", "content": "VALUE = 1\n"}]
+    runner._has_in_scope_diff = lambda *_args: True
+    runner._run_quality_gate = lambda: {"passed": True, "checks": []}
+    runner._has_safe_diff = lambda: True
+    runner.reviewer = Mock()
+    runner.reviewer.review.return_value = SimpleNamespace(approved=True, reasons=[])
+    sandbox = SimpleNamespace(tools=SimpleNamespace(last_approval_request=None), cleanup=Mock())
+    task_state = Mock()
+
+    with patch("src.autonomous.SandboxEnv", return_value=sandbox), patch(
+        "src.autonomous.SWEAgent"
+    ) as agent_class, patch(
+        "src.autonomous.create_task_state", return_value=task_state
+    ):
+        agent_class.return_value.solve.return_value = True
+        result = runner._run_once()
+
+    if require_action_approval:
+        assert result["status"] == "pending_action_approval"
+        runner.client.create_branch.assert_not_called()
+        runner.client.commit_files.assert_not_called()
+        runner.client.create_pull_request.assert_not_called()
+    else:
+        assert result["status"] == "pull_request_opened"
+        runner.client.create_branch.assert_called_once()
+        runner.client.commit_files.assert_called_once()
+        runner.client.create_pull_request.assert_called_once()

@@ -8,12 +8,13 @@ deve receber acesso de escrita direta a `main`.
 
 ## Estado atual
 
-O fluxo implantado usa:
+A implementacao desta branch usa:
 
 - Ollama local compativel com a API OpenAI;
 - um workspace separado do codigo do agente;
 - uma branch `bastiao/issue-N` por issue;
-- aprovacao humana antes da execucao;
+- aprovacao humana por issue antes da execucao; essa autorizacao cobre o trabalho
+  delimitado, validacao, commits locais na branch da issue e publicacao apos os gates;
 - Planner com caminhos permitidos e passos verificaveis;
 - testes, validacao de diff e Reviewer antes da publicacao;
 - estado e metricas persistentes fora do workspace;
@@ -28,6 +29,8 @@ O fluxo implantado usa:
 
 O protocolo continua experimental. A qualidade da alteracao depende do modelo e
 toda pull request deve passar por revisao humana antes do merge.
+Esta branch nao foi aplicada ao servidor ativo; a implantacao requer aprovacao
+operacional separada.
 
 ## Fluxo
 
@@ -35,10 +38,12 @@ toda pull request deve passar por revisao humana antes do merge.
 issue aberta e explicitamente aprovada
     |
     v
-branch bastiao/issue-N baseada em origin/main
+workspace local isolado e branch bastiao/issue-N
     |
     v
 SWE-agent (ler, pesquisar, escrever e executar testes)
+    |
+    +--> instalacao, JavaScript arbitrario ou inspecao Docker: aprovacao especifica
     |
     v
 pytest ou compileall + validacao semantica
@@ -49,11 +54,18 @@ Reviewer deterministico
     +--> rejeitado: comentario na issue, sem PR
     |
     v
-commit via GitHub API -> pull request -> comentario na issue
+branch GitHub -> commit -> pull request -> comentario na issue
 ```
 
+O trabalho e os commits locais permanecem na branch isolada
+`bastiao/issue-N`. Publicar a pull request e automatico depois dos gates; merge
+nao e automatico. Instalacao de dependencias, execucao JavaScript arbitraria e
+inspecao Docker continuam exigindo aprovacao de acao especifica. Testes e
+scripts de qualidade padrao podem executar sem uma confirmacao por etapa.
+
 O ciclo retorna `no_open_issues`, `pending_approval`, `failed`,
-`rejected_out_of_scope`, `rejected_unsafe_diff`, `rejected_by_reviewer` ou
+`rejected_out_of_scope`, `rejected_unsafe_diff`, `rejected_by_reviewer`,
+`pending_action_approval`, `action_denied`, `quality_gate_failed` ou
 `pull_request_opened`. Uma issue e processada por ciclo conforme
 `BASTIAO_MAX_ISSUES`.
 
@@ -80,6 +92,56 @@ O arquivo de aprovacao e `/var/lib/bastiao/approvals.json` e deve conter uma
 lista JSON de numeros de issues, por exemplo `[43]`. Com
 `BASTIAO_REQUIRE_APPROVAL=true`, issues fora dessa lista permanecem em
 `pending_approval`.
+
+## Aprovacao de acoes sensiveis
+
+A aprovacao explicita da issue e a autorizacao humana para o ciclo completo
+daquela issue: leitura e escrita apenas nos caminhos do Planner, testes e
+validacao, commits locais restritos a `bastiao/issue-N` e publicacao depois dos
+gates. O numero permanece autorizado enquanto estiver em
+`state/approvals.json`; remova-o para revogar a autorizacao e parar retries. Isso
+elimina confirmacoes por etapa, mas nao elimina a aprovacao inicial da issue.
+`BASTIAO_REQUIRE_ACTION_APPROVAL=true` restaura o modo estrito de
+aprovacao adicional para as demais acoes sensiveis e para publicacao.
+
+Instalacao de dependencias, comandos Node/JavaScript arbitrarios e inspecao
+Docker continuam com aprovacao especifica mesmo no modo padrao. Scripts padrao
+de teste e qualidade (`npm test`, `npm run test`, `test:unit`, `test:vitest`,
+`lint`, `typecheck` e `check`) podem rodar sem confirmacao por etapa.
+Acoes aprovadas sao vinculadas a issue, comando exato e fingerprint, sao de uso
+unico e expiram. Publicacao automatica so ocorre apos o Quality Gate, validacao
+de escopo/diff e Reviewer.
+
+Comandos privilegiados, destrutivos, de sistema, acesso fora do workspace,
+Podman, operacoes Docker mutaveis, push, merge, troca/criacao de branch,
+alteracoes de Git fora do escopo e execucao Python arbitraria sao bloqueados.
+`git add` e `git commit -m` locais so sao permitidos na branch esperada e para
+arquivos explicitamente autorizados pelo Planner; hooks Git sao desativados
+nesses comandos. Testes e compilacao Python limitados continuam automaticos.
+A auditoria JSONL registra contexto sanitizado, nunca o conteudo dos arquivos;
+valores em argumentos com nomes de credenciais e codigo inline de Node sao
+ocultados. Os arquivos de solicitacao e auditoria usam permissao `0600` em
+POSIX.
+
+No Docker Compose, revise as solicitacoes persistidas no volume `./state`:
+
+```bash
+docker compose --profile agent exec bastiao python -m src.action_approval list
+docker compose --profile agent exec bastiao python -m src.action_approval approve REQUEST_ID --approver "Seu nome"
+docker compose --profile agent exec bastiao python -m src.action_approval deny REQUEST_ID
+```
+
+No piloto, revise manualmente o diff local e os resultados do Quality
+Gate/Reviewer antes de habilitar a execucao. No host, use
+`git -C ./workspace diff origin/main`. Os pedidos de aprovacao mostram arquivos
+e fingerprints, nao copiam o conteudo do patch para a auditoria.
+
+O estado padrao e `/var/lib/bastiao/action-approvals.json`; a auditoria fica
+em `/var/lib/bastiao/action-approval-audit.jsonl`. Solicitacoes expiram apos
+24 horas e aprovacoes apos 1 hora por padrao. Apos aprovar, um ciclo posterior
+retoma a tarefa; a aprovacao nao executa a acao por si mesma. Para manter
+aprovacao adicional em cada acao sensivel, configure
+`BASTIAO_REQUIRE_ACTION_APPROVAL=true`.
 
 ## Execucao local
 
@@ -162,6 +224,11 @@ As variaveis documentadas em `.env.example` sao:
 | `BASTIAO_CONTAINER_PIDS_LIMIT` | nao | `256` | Maximo de processos/threads no container Bastiao |
 | `BASTIAO_REQUIRE_APPROVAL` | nao | `true` | Exige aprovacao no arquivo persistente antes da execucao |
 | `BASTIAO_APPROVAL_FILE` | nao | `/var/lib/bastiao/approvals.json` | Arquivo JSON com issues aprovadas |
+| `BASTIAO_REQUIRE_ACTION_APPROVAL` | nao | `false` | Quando `true`, exige aprovacao adicional para acoes sensiveis e publicacao; instalacoes, JavaScript arbitrario e Docker sempre exigem aprovacao especifica |
+| `BASTIAO_ACTION_APPROVAL_FILE` | nao | `/var/lib/bastiao/action-approvals.json` | Solicitacoes e decisoes de aprovacao de acoes |
+| `BASTIAO_ACTION_AUDIT_FILE` | nao | `/var/lib/bastiao/action-approval-audit.jsonl` | Auditoria append-only das solicitacoes e decisoes |
+| `BASTIAO_APPROVAL_REQUEST_TTL_SECONDS` | nao | `86400` | Validade da solicitacao pendente |
+| `BASTIAO_ACTION_APPROVAL_TTL_SECONDS` | nao | `3600` | Validade da aprovacao antes do consumo |
 | `BASTIAO_STATE_DIR` | nao | `/var/lib/bastiao` | Diretorio de checkpoints e metricas |
 | `OMNIROUTE_URL` | nao | `http://127.0.0.1:11434/v1` | Base URL da API de chat |
 | `OMNIROUTE_API_KEY` | nao | vazio | Chave opcional para o endpoint |
@@ -194,8 +261,13 @@ menos que `BASTIAO_RETRY_ISSUES=true`.
 ## Seguranca e limites
 
 - Caminhos absolutos e caminhos que escapam do workspace sao rejeitados.
-- Comandos sao tokenizados sem `shell=True` e aceitam somente
-  `pytest`, `python`, `python3`, `git`, `npm` e `node`.
+- Comandos sao tokenizados sem `shell=True`; comandos destrutivos, privilegiados,
+  de sistema, Git remoto/destrutivo, Docker mutavel/Podman, execucao Python arbitraria e leitura
+  de arquivos com nomes de credenciais sao bloqueados antes da execucao.
+- A autorizacao da issue cobre alteracoes nos caminhos planejados, commits
+  locais na branch dedicada e publicacao apos os gates. Instalacoes, comandos
+  JavaScript/Node arbitrario e inspecoes Docker continuam exigindo aprovacao
+  especifica. Scripts padrao allowlisted de teste/qualidade executam sem pausa.
 - Arquivos `.env` e caminhos dentro de `.git` nao sao publicados.
 - O agente nao faz merge e nao deve usar credenciais de administrador.
 - Diffs que removem muito mais linhas do que adicionam sao rejeitados.
@@ -209,7 +281,8 @@ menos que `BASTIAO_RETRY_ISSUES=true`.
   publicar uma PR.
 - O Reviewer valida caminhos, seguranca do diff, sintaxe Python e constantes
   explicitamente exigidas pela issue.
-- O modelo nao pode publicar commits diretamente; a publicacao usa a API do
+- O modelo pode criar commits locais apenas nos arquivos do Planner e na branch
+  da issue; nunca pode fazer push ou merge. A publicacao remota usa a API do
   GitHub somente depois dos gates.
 - O token deve permanecer somente no ambiente do processo ou no `.env` local,
   que esta fora do contexto de build pelo `.dockerignore`.
@@ -230,8 +303,10 @@ em [`ROADMAP.md`](ROADMAP.md). A proxima retomada deve seguir esta ordem:
 6. **#35 — memoria persistente com ChromaDB**.
 7. **#38 — pipeline autodidata de pesquisa, estudo e avaliacao**.
 
-OpenHands, execucao 24/7, merge automatico e maior autonomia permanecem
-bloqueados ate que essas etapas tenham testes e gates verificaveis.
+OpenHands, execucao 24/7 e merge automatico permanecem bloqueados. O modo
+autonomo por issue usa autorizacao inicial, branch isolada, escopo do Planner,
+Quality Gate e Reviewer; o deployment deste modo exige revisao e validacao
+operacional separadas.
 
 Resumo do que ja foi concluido:
 

@@ -6,6 +6,7 @@ Ambiente de execucao do agente.
 from dataclasses import dataclass
 from typing import Optional
 
+from .action_approval import ActionApprovalStore
 from .tools import ToolHandler
 
 
@@ -32,6 +33,10 @@ class SandboxEnv:
         max_write_bytes: int = 1_000_000,
         memory_limit_mb: int = 0,
         cpu_limit_seconds: int = 0,
+        issue_number: Optional[int] = None,
+        approval_store: Optional[ActionApprovalStore] = None,
+        require_action_approval: bool = True,
+        expected_branch: Optional[str] = None,
     ):
         """Inicializa o ambiente.
 
@@ -49,6 +54,10 @@ class SandboxEnv:
             max_write_bytes=max_write_bytes,
             memory_limit_mb=memory_limit_mb,
             cpu_limit_seconds=cpu_limit_seconds,
+            issue_number=issue_number,
+            approval_store=approval_store,
+            require_action_approval=require_action_approval,
+            expected_branch=expected_branch,
         )
         self.state = EnvState()
 
