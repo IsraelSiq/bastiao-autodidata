@@ -1,4 +1,4 @@
-# Checkpoint da sessao ? 2026-10-07 (retomada #30)
+# Checkpoint da sessao — 2026-10-07 (triagem de issues)
 
 ## Atualizacao posterior: autonomia por issue (#29)
 
@@ -21,55 +21,31 @@
 
 ## Estado confirmado
 
-- `main` usada como base: commit `95f1f87` (PR #50 mergeada em 2026-10-07).
-- PR #49 e PR #50: mergeadas.
-- Issues #30 e #37: continuam abertas no GitHub; nenhuma PR aberta para a branch de limites.
-- Branch atual: `fix/issue-30-compose-limits`, ainda sem commit/publicacao.
-- O container Bastiao estava ativo quando consultado; nenhuma operacao reiniciou, reconstruiu ou atualizou esse servico.
-- O checkout operacional tinha trabalho local nao commitado e permaneceu intocado.
-- Todas as validacoes ocorreram em clone, imagem e containers descartaveis.
-- O ultimo ciclo observado era `no_open_issues`; issue #43 foi ignorada por ja ter PR. A aprovacao persistente ainda mencionava #43 e nao foi reutilizada nem alterada.
+- `main` inclui a PR #51, merge commit `724c6a9` (PR #50 permanece em `95f1f87`).
+- PRs #49, #50 e #51 estao mergeadas. Nenhuma PR estava aberta durante a auditoria.
+- Issues #43, #6, #10, #11 e #21 foram fechadas com comentarios de justificativa: #43 concluida; #6 substituida por #36; #10/#11 incorporadas em #38; #21 substituida pelo roadmap #31.
+- Permanecem abertas: #22, #23, #24, #25, #29, #30, #31, #33, #34, #35, #36, #37 e #38.
+- A triagem nao alterou o servico ativo nem iniciou ciclo do agente.
 
-## Validacao concluida antes da branch atual
+## Trabalho de sandbox ja mergeado
 
-- `docker compose config --quiet`: passou.
-- Baseline anterior: suite completa em container descartavel: 77 testes passaram; `compileall` passou.
-- Branch `fix/bounded-subprocess-output`: suite completa em Docker Linux: 80 testes passaram; `compileall` passou. Pydantic foi instalado somente dentro do container efemero para coletar os testes.
-- Testes focados em subprocessos, ferramentas e Quality Gate sob `--memory=512m --cpus=1`: 25 passaram.
-- Teste de stress gerou 32 MiB em stdout; a branch reteve exatamente 1.000.000 bytes, sinalizou truncamento e terminou com sucesso sob os limites do container.
-- Os testes de rlimit de CPU e memoria passaram em Linux. Suite local Windows: 78 passaram, 2 ignorados (rlimits POSIX-only).
-- Healthcheck somente leitura confirmou Ollama, ChromaDB e workspace acessiveis; a sonda GitHub nao recebeu credenciais e nao confirmou conectividade autenticada.
-- Nenhum ciclo de agente, alteracao de aprovacao ou escrita no workspace de producao foi iniciado.
+- PR #50 limitou captura de stdout/stderr antes da retencao, com drenagem para evitar bloqueio de pipes, indicacao de truncamento e busca de codigo pelo executor sanitizado.
+- PR #51 definiu limites Compose de 4 GiB, 2 CPUs, 256 PIDs e tmpfs de `/tmp` de 512 MiB; limites POSIX por subprocesso de 2048 MiB e 45 segundos de CPU; propagacao e diagnostico de limites no Quality Gate.
+- Validacao documentada da PR #51: Windows 82 testes passaram, 2 skips POSIX-only; Linux/Docker descartavel 84 testes passaram; `compileall`, `git diff --check` e `docker compose --profile agent config --quiet` passaram. Medicoes descartaveis confirmaram os limites cgroup/tmpfs.
+- A validacao foi feita em clone e container descartaveis. Nenhum container do stack ativo foi reiniciado, reconstruido ou atualizado.
 
-## Validacao da branch atual `fix/issue-30-compose-limits`
+## Riscos e pendencias
 
-- `python -m pytest tests/test_process.py tests/test_tools.py tests/test_quality_gate.py tests/test_autonomous.py -q`: 39 passed, 2 skipped (Windows; rlimits POSIX-only).
-- `python -m pytest -q` no Windows: 82 passed, 2 skipped.
-- `python -m pytest -q` na imagem Linux descartavel sob 4 GiB/2 CPUs/256 PIDs e `/tmp` tmpfs 512 MiB: 84 passed.
-- `python -m compileall -q .` passou no Windows e no container Linux; `git diff --check` passou localmente.
-- `docker compose --profile agent config --quiet` passou no diretorio descartavel no servidor; o Compose avisou que o campo `version` legado e ignorado.
-- Medicao real no container descartavel: `memory.max=4294967296`, `cpu.max=200000 100000`, `pids.max=256`, `/tmp=536870912` bytes. Pydantic foi instalado somente na camada da imagem temporaria para executar os testes; manifests do projeto nao mudaram.
-- Nao foi iniciado/recriado qualquer container do stack Bastiao/Ollama/Chroma/Open WebUI ativo; nenhum ciclo ou aprovacao persistente foi tocado.
+- `workspace/` nao tem quota agregada; comandos podem escrever diretamente no bind mount. `pids_limit` e agregado ao container, nao por issue. Decidir se a quota de workspace entra no escopo antes de fechar #30.
+- A PR #51 nao foi aplicada ao servico ativo. Em `.env` antigo, `BASTIAO_MEMORY_LIMIT_MB=0` e `BASTIAO_CPU_LIMIT_SECONDS=0` podem desativar os rlimits por subprocesso. Qualquer implantacao requer revisao do `.env` e janela operacional aprovada.
+- #29, #33, #34 e #37 possuem implementacoes parciais, mas restam criterios descritos em `ROADMAP.md`; nao marcar como concluidas ainda.
+- #22 precisa esclarecer se requer o produto SWE-agent upstream ou apenas o fluxo autonomo proprio do Bastiao. #25 continua sem implementacao mergeada; PRs #26/#28 fecharam sem merge.
+- #23/#24 seguem adiadas; #35/#36/#38 sao fases futuras.
+- A atualizacao do roadmap e deste checkpoint esta nesta branch documental; fechar #31 apos revisar e mergear esta documentacao.
 
-## PR #50 e estado da branch de limites
+## Proxima retomada
 
-A prova original reproduziu uma lacuna em `src/process.py`: `communicate()` acumulou 32 MiB de stdout antes de a ferramenta truncar o texto devolvido. A PR #50 (merge commit `95f1f87`) adicionou drenagem concorrente com teto em bytes, sinalizacao de truncamento, ambiente sanitizado e limite para busca; a validacao Linux/Docker passou. A implantacao ativa nao recebeu esse codigo.
-
-A branch atual `fix/issue-30-compose-limits` modifica `.env.example`, `docker-compose.yml`, `src/autonomous.py`, `src/process.py`, `src/tools.py`, `src/quality_gate.py` e testes. Propoe container Bastiao limitado a 4 GiB, 2 CPUs, 256 PIDs, `/tmp` tmpfs de 512 MiB; por subprocesso POSIX, 2048 MiB de espaco de enderecamento e 45 s de CPU. O codigo diagnostica `MemoryError` e `SIGXCPU`, inclusive no Quality Gate. A validacao Linux confirmou os limites configurados; eles nao foram aplicados ao container ativo.
-
-Gap conhecido: `pids_limit` e por container; `/tmp` tem teto, mas o volume `workspace/` nao tem quota de disco agregada, e comandos podem escrever diretamente nele. Valores antigos `0` em `.env` podem continuar desativando rlimits por comando; a implantacao futura requer revisar esse arquivo.
-
-## Pendencias para retomar
-
-1. Corrigir eventuais falhas dos testes e validar testes focados + suite completa em Linux.
-2. Validar `docker compose config` e os limites em um container descartavel no servidor; nao tocar no stack ativo.
-3. Fechar a politica pendente de disco do workspace, registrar evidencias, fazer revisao e abrir PR para #30 mantendo a issue aberta enquanto faltar requisito.
-4. Revisar #37 e concluir sua revisao humana; nao habilitar 24/7.
-5. Somente depois iniciar #36 (providers/fallback).
-
-## Guardas operacionais
-
-- Nao limpar, resetar ou sobrescrever o checkout operacional com mudancas locais.
-- Nao iniciar o container/agente ativo, nao escrever em `state/approvals.json` e nao reutilizar a aprovacao antiga.
-- Nao alterar o container ativo; qualquer teste deve usar clone, imagem e container descartaveis.
-- Nao habilitar 24/7, merge automatico, dependencia instalada automaticamente ou fallback ilimitado.
+1. Revisar e mergear a atualizacao documental; fechar #31 somente depois disso.
+2. Definir quota do workspace e atualizar escopo/issue #30 conforme a decisao.
+3. Completar os requisitos pendentes de #29, #33, #34 e #37 com testes antes de ampliar autonomia.
+4. Manter o stack ativo intacto ate aprovacao expressa para implantacao.
