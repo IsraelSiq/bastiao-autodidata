@@ -22,7 +22,7 @@ As PRs #45 e #46 foram revisadas e mergeadas manualmente. Na fase da PR #48, 38 
 
 A sessao foi encerrada logo apos o merge da PR #48. Nenhuma implementacao da issue #37 foi iniciada. O container Bastiao deve permanecer parado ate nova issue ser escolhida e aprovada explicitamente.
 
-CPU, memoria, processos filhos e temporarios ainda nao estao limitados de forma portavel e nao devem ser considerados concluidos.
+CPU e memoria so possuem limite opcional em POSIX (nao no Windows) e ainda nao foram validados em Docker/runtime real; nao devem ser considerados concluidos.
 
 ## Proxima sequencia
 
@@ -36,9 +36,9 @@ strict_scope rejeita planos sem caminhos permitidos, bloqueia escritas fora do e
 
 ### 3. Issue #30 — Limites do sandbox — parcialmente concluida
 
-Entregue: timeout por comando, limite de comandos, limite de saida e limite de bytes por arquivo.
+Entregue: timeout por comando (com encerramento de processos filhos), limite de comandos, limite de saida e limite de bytes por arquivo, diretorio temporario por tarefa com limpeza garantida, ambiente sem credenciais para comandos do modelo e Quality Gate, e limites opcionais de memoria/CPU em POSIX (`src/process.py`).
 
-Pendente: CPU, memoria, processos filhos, arquivos temporarios/limpeza e validacao especifica do Docker/runtime.
+Pendente: validacao especifica do Docker/runtime (incluindo `mem_limit`/`cpus` no Compose e os rlimits em Linux).
 
 ### 4. Issue #37 — Observabilidade operacional — em andamento
 

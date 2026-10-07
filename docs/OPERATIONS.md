@@ -114,7 +114,7 @@ strict_scope rejeita planos sem caminhos permitidos (rejected_no_scope), bloquei
 
 ## Limites do sandbox
 
-BASTIAO_COMMAND_TIMEOUT_SECONDS encerra comandos demorados; BASTIAO_MAX_COMMANDS limita comandos; BASTIAO_MAX_OUTPUT_CHARS limita saida; BASTIAO_MAX_WRITE_BYTES limita arquivos. CPU, memoria, processos filhos e temporarios ainda nao possuem limite portavel e permanecem pendentes para Docker/runtime.
+BASTIAO_COMMAND_TIMEOUT_SECONDS encerra comandos demorados **e todos os processos filhos** (grupo de processos no POSIX, `taskkill /T` no Windows); BASTIAO_MAX_COMMANDS limita comandos; BASTIAO_MAX_OUTPUT_CHARS limita saida; BASTIAO_MAX_WRITE_BYTES limita arquivos. Comandos do modelo e o Quality Gate rodam com ambiente sem credenciais (`GITHUB_TOKEN`, `OMNIROUTE_API_KEY` e variaveis com TOKEN/SECRET/PASSWORD/API_KEY sao removidas). Cada tarefa usa um diretorio temporario proprio (`TMPDIR/TEMP/TMP`), removido ao fim da tarefa mesmo em falha. Em POSIX, `BASTIAO_MEMORY_LIMIT_MB` (RLIMIT_AS) e `BASTIAO_CPU_LIMIT_SECONDS` (RLIMIT_CPU) limitam cada comando; o padrao 0 desativa. Esses limites nao sao aplicados no Windows e ainda nao foram validados em Docker/runtime real; o limite de memoria do container (`mem_limit` no Compose) continua recomendado.
 
 ## Historico validado
 

@@ -30,6 +30,8 @@ class SandboxEnv:
         max_output_chars: int = 10000,
         max_commands: int = 100,
         max_write_bytes: int = 1_000_000,
+        memory_limit_mb: int = 0,
+        cpu_limit_seconds: int = 0,
     ):
         """Inicializa o ambiente.
 
@@ -45,8 +47,14 @@ class SandboxEnv:
             max_output_chars=max_output_chars,
             max_commands=max_commands,
             max_write_bytes=max_write_bytes,
+            memory_limit_mb=memory_limit_mb,
+            cpu_limit_seconds=cpu_limit_seconds,
         )
         self.state = EnvState()
+
+    def cleanup(self) -> None:
+        """Release per-task resources such as temporary directories."""
+        self.tools.cleanup()
 
     def execute_action(self, action: str) -> str:
         """Executa acao.

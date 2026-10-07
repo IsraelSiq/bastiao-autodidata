@@ -252,35 +252,37 @@ Steps:
             state.start_step()
             state.save(self.state_dir)
 
+            env = SandboxEnv(
+                str(self.workspace),
+                allowed_paths=plan.allowed_paths,
+                strict_scope=True,
+                command_timeout_seconds=int(
+                    os.getenv("BASTIAO_COMMAND_TIMEOUT_SECONDS", "60")
+                ),
+                max_output_chars=int(os.getenv("BASTIAO_MAX_OUTPUT_CHARS", "10000")),
+                max_commands=int(os.getenv("BASTIAO_MAX_COMMANDS", "100")),
+                max_write_bytes=int(os.getenv("BASTIAO_MAX_WRITE_BYTES", "1000000")),
+                memory_limit_mb=int(os.getenv("BASTIAO_MEMORY_LIMIT_MB", "0")),
+                cpu_limit_seconds=int(os.getenv("BASTIAO_CPU_LIMIT_SECONDS", "0")),
+            )
             agent = SWEAgent(
                 model=OmniRouteModel(),
-                env=SandboxEnv(
-                    str(self.workspace),
-                    allowed_paths=plan.allowed_paths,
-                    strict_scope=True,
-                    command_timeout_seconds=int(
-                        os.getenv("BASTIAO_COMMAND_TIMEOUT_SECONDS", "60")
-                    ),
-                    max_output_chars=int(
-                        os.getenv("BASTIAO_MAX_OUTPUT_CHARS", "10000")
-                    ),
-                    max_commands=int(os.getenv("BASTIAO_MAX_COMMANDS", "100")),
-                    max_write_bytes=int(
-                        os.getenv("BASTIAO_MAX_WRITE_BYTES", "1000000")
-                    ),
-                ),
+                env=env,
                 max_iterations=self.max_iterations,
             )
-            solved = agent.solve(
-                issue.title,
-                issue.body or "",
-                plan=(
-                    self._format_plan(plan)
-                    + f"\n\nResume checkpoint: step {state.current_step}, "
-                    f"attempt {state.attempts}. Last result: {state.result or 'none'}. "
-                    f"Previous error: {state.error or 'none'}."
-                ),
-            )
+            try:
+                solved = agent.solve(
+                    issue.title,
+                    issue.body or "",
+                    plan=(
+                        self._format_plan(plan)
+                        + f"\n\nResume checkpoint: step {state.current_step}, "
+                        f"attempt {state.attempts}. Last result: {state.result or 'none'}. "
+                        f"Previous error: {state.error or 'none'}."
+                    ),
+                )
+            finally:
+                env.cleanup()
             files = self._changed_files() if solved else []
             if not solved or not files:
                 state.fail("agent did not produce a patch")
