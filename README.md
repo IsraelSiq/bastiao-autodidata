@@ -17,7 +17,14 @@ O fluxo implantado usa:
 - Planner com caminhos permitidos e passos verificaveis;
 - testes, validacao de diff e Reviewer antes da publicacao;
 - estado e metricas persistentes fora do workspace;
-- GitHub Data API para publicar arquivos, commit e pull request.
+- GitHub Data API para publicar arquivos, commit e pull request;
+- observabilidade: `cycle_id` por ciclo, metricas com redaction e rotacao,
+  `status.json`, retry com backoff nas leituras e healthcheck
+  (`python -m src.health`);
+- sandbox com ambiente sanitizado, execucao limitada (`src/process.py`) e
+  limpeza do diretorio temporario por tarefa;
+- Tool do Open WebUI somente leitura (`openwebui/github_reader_tool.py`) para o
+  chat ler links, issues, PRs e arquivos do GitHub.
 
 O protocolo continua experimental. A qualidade da alteracao depende do modelo e
 toda pull request deve passar por revisao humana antes do merge.
@@ -201,8 +208,8 @@ em [`ROADMAP.md`](ROADMAP.md). A proxima retomada deve seguir esta ordem:
 
 1. **#34 — quality gate real antes de publicar uma PR** — concluida.
 2. **Reforco de escopo e abortamento apos violacao** — concluido.
-3. **#30 — limites de CPU, memoria, processos e saida do sandbox**.
-4. **#37 — observabilidade, checkpoints e diagnostico operacional**.
+3. **#30 — limites de CPU, memoria, processos e saida do sandbox** - parte portavel concluida.
+4. **#37 — observabilidade, checkpoints e diagnostico operacional** - concluida.
 5. **#36 — abstracao de providers e fallback limitado**.
 6. **#35 — memoria persistente com ChromaDB**.
 7. **#38 — pipeline autodidata de pesquisa, estudo e avaliacao**.
@@ -223,7 +230,10 @@ Resumo do que ja foi concluido:
 - [x] Reviewer semantico para constantes e sintaxe Python.
 - [x] Teste controlado #43 concluido com a PR #46 contendo somente
   `src/health_marker.py`.
-- [ ] Quality gate completo, limites de recursos e memoria persistente.
+- [x] Observabilidade (#37): cycle_id, redaction, rotacao, status.json, retry e healthcheck.
+- [x] Limites portaveis do sandbox (#30); limites de CPU/memoria so em POSIX e ainda nao validados em Docker.
+- [x] Tool somente leitura do Open WebUI para ler o GitHub.
+- [ ] Memoria persistente (#35), providers/fallback (#36) e pipeline autodidata (#38).
 - [x] Quality Gate com timeout, evidencias e bloqueio de publicacao.
 - [x] Escopo estrito: planos vazios rejeitados e violacoes abortam o agente.
 
