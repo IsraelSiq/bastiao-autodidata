@@ -16,10 +16,11 @@ Orquestra o fluxo de uma issue:
 3. atualiza `origin/main` e recria ou retoma a branch `bastiao/issue-N`;
 4. cria ou restaura o plano e o checkpoint;
 5. executa `SWEAgent` no workspace;
-6. coleta arquivos modificados;
+6. permite `git add`/`git commit -m` somente na branch isolada da issue e em
+   arquivos autorizados pelo Planner (ou coleta arquivos modificados sem commit);
 7. executa testes;
 8. valida escopo, diff e requisitos explicitos com o `Reviewer`;
-9. publica o commit e a pull request via `GitHubClient`.
+9. publica branch/commit/PR via `GitHubClient`, somente depois dos gates.
 
 ### `src/swe_agent.py`
 
@@ -34,7 +35,8 @@ conclusoes apos falhas sao solicitadas novamente ate o limite configurado.
 ativa no fluxo issue-to-PR. O caminho recebido e resolvido contra a raiz do
 repositorio, e comandos sao executados com `shell=False`, timeout e allowlist.
 Escritas ficam limitadas aos caminhos extraidos pelo Planner e `complete` e
-tratado como marcador de controle, nao como comando do shell.
+tratado como marcador de controle, nao como comando do shell. O push, merge e
+troca de branch continuam bloqueados para as ferramentas do agente.
 
 `src/sandbox.py` contem sandboxes legados para execucao local de exercicios; nao
 e usado pelo fluxo autonomo documentado aqui.

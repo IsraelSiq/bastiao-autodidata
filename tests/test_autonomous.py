@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 from uuid import UUID
 import requests
+import pytest
 from src.metrics import CycleMetrics
 
 from src.autonomous import AutonomousRunner
@@ -27,6 +28,29 @@ def test_issue_scope_accepts_explicit_target_file():
         "Create hello.py script",
         "File must be at `src/hello.py`.",
         files,
+    )
+
+
+def test_plan_scope_requires_every_changed_file_to_be_explicitly_allowed():
+    from src.planner import IssuePlan, PlanStep
+
+    plan = IssuePlan(
+        issue_number=29,
+        title="Scope",
+        acceptance_criteria=[],
+        allowed_paths=["src/allowed.py"],
+        steps=[PlanStep("implement", "Implement", "write")],
+    )
+
+    assert AutonomousRunner._has_plan_scope_diff(
+        plan, [{"path": "src/allowed.py", "content": "VALUE = 1\n"}]
+    )
+    assert not AutonomousRunner._has_plan_scope_diff(
+        plan,
+        [
+            {"path": "src/allowed.py", "content": "VALUE = 1\n"},
+            {"path": "tests/unplanned.py", "content": "assert True\n"},
+        ],
     )
 
 
@@ -293,12 +317,31 @@ def test_publication_approval_is_bound_to_exact_file_contents(tmp_path, monkeypa
     assert new_base_request["status"] == "pending"
 
 
-def test_runner_does_not_create_github_branch_before_publication_approval(
-    tmp_path, monkeypatch
+def test_publication_uses_issue_authorization_by_default(monkeypatch):
+    monkeypatch.delenv("BASTIAO_REQUIRE_ACTION_APPROVAL", raising=False)
+    runner = AutonomousRunner.__new__(AutonomousRunner)
+
+    allowed, request = runner._authorize_publication(
+        29,
+        "bastiao/issue-29",
+        "base-sha",
+        [{"path": "src/example.py", "content": "VALUE = 1\n"}],
+    )
+
+    assert allowed
+    assert request is None
+
+
+@pytest.mark.parametrize("require_action_approval", [True, False])
+def test_runner_publication_obeys_additional_approval_setting(
+    tmp_path, monkeypatch, require_action_approval
 ):
     from src.action_approval import ActionApprovalStore
 
-    monkeypatch.setenv("BASTIAO_REQUIRE_ACTION_APPROVAL", "true")
+    monkeypatch.setenv(
+        "BASTIAO_REQUIRE_ACTION_APPROVAL",
+        "true" if require_action_approval else "false",
+    )
     runner = AutonomousRunner.__new__(AutonomousRunner)
     runner.client = Mock()
     runner.client.list_issues.return_value = [
@@ -336,7 +379,13 @@ def test_runner_does_not_create_github_branch_before_publication_approval(
         agent_class.return_value.solve.return_value = True
         result = runner._run_once()
 
-    assert result["status"] == "pending_action_approval"
-    runner.client.create_branch.assert_not_called()
-    runner.client.commit_files.assert_not_called()
-    runner.client.create_pull_request.assert_not_called()
+    if require_action_approval:
+        assert result["status"] == "pending_action_approval"
+        runner.client.create_branch.assert_not_called()
+        runner.client.commit_files.assert_not_called()
+        runner.client.create_pull_request.assert_not_called()
+    else:
+        assert result["status"] == "pull_request_opened"
+        runner.client.create_branch.assert_called_once()
+        runner.client.commit_files.assert_called_once()
+        runner.client.create_pull_request.assert_called_once()

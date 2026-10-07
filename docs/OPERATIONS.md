@@ -4,11 +4,10 @@
 
 As PRs #49 e #50 foram mergeadas na `main`; a #50 limitou a captura de saida dos subprocessos. A branch `fix/issue-30-compose-limits` implementa limites operacionais e passou na suite Docker Linux descartavel (84 testes) e na validacao de configuracao Compose. As issues #30 e #37 permanecem abertas. A implantacao existente nao foi reiniciada nem atualizada, e o checkout operacional com alteracoes locais foi preservado sem limpeza ou reset.
 
-O gate de acoes da issue #29 esta sendo desenvolvido em uma branch isolada e
-ainda nao esta disponivel no container ativo. Os comandos de aprovacao abaixo
-so funcionarao depois que uma versao contendo `src.action_approval` for
-revisada e implantada com aprovacao operacional. Nao reconstrua nem reinicie o
-servico ativo para esta validacao.
+O gate de acoes e o modo autonomo por issue estao em desenvolvimento na branch
+`feat/issue-29-human-approval` e ainda nao estao disponiveis no container ativo.
+Nao reconstrua nem reinicie o servico ativo para esta validacao; implantar exige
+revisao e aprovacao operacional separadas.
 
 Antes de qualquer operacao, confirme o estado real com `docker compose --profile agent ps` e inspecione aprovacoes/checkpoints existentes. Nao reutilize uma aprovacao antiga: selecione a issue com o operador e substitua o arquivo de aprovacao somente depois de confirmacao explicita.
 
@@ -33,10 +32,14 @@ Com `BASTIAO_REQUIRE_APPROVAL=true`, confirme no log um ciclo `pending_approval`
 
 ## Aprovacoes de acoes sensiveis
 
-A aprovacao por issue nao autoriza publicacao remota, alteracoes de configuracao
-ou instalacao/execucao de dependencias. O agente persiste cada solicitacao de
-acao e retorna `pending_action_approval` sem executa-la; a branch remota, commit
-e PR tambem aguardam aprovacao separada do manifesto exato dos arquivos.
+A aprovacao inicial por issue autoriza o ciclo delimitado: leitura/escrita nos
+caminhos do Planner, testes e validacao, commits locais em `bastiao/issue-N` e
+publicacao apos os gates. `BASTIAO_REQUIRE_ACTION_APPROVAL=true` habilita
+aprovacoes adicionais para acoes sensiveis e publicacao. No modo padrao, ainda
+exigem aprovacao especifica instalacao de dependencias, comandos JavaScript/Node
+arbitrarios e inspecao Docker. Scripts de teste/qualidade allowlisted podem
+rodar sem confirmacao por etapa. Remova uma issue de `state/approvals.json`
+para revogar sua autorizacao persistente e interromper retries.
 
 Revise a acao, o destino, o numero da issue e a validade antes de decidir:
 
@@ -54,12 +57,12 @@ que um ciclo posterior retome a tarefa. Consulte
 `state/action-approval-audit.jsonl` para auditoria; nao edite manualmente o
 arquivo de solicitacoes para converter uma negacao em aprovacao.
 
-Podman, operacoes Docker mutaveis, comandos de sistema, operacoes Git mutaveis,
-caminhos fora do workspace, arquivos com nomes de credenciais e execucao
-Python arbitraria sao bloqueados e nao podem ser aprovados. Inspecoes Docker
-somente leitura exigem aprovacao. Mantenha
-`BASTIAO_REQUIRE_ACTION_APPROVAL=true`; desativar esse gate remove uma
-salvaguarda operacional.
+Podman, operacoes Docker mutaveis, comandos de sistema, push/merge/troca de
+branch, caminhos fora do workspace, arquivos de credenciais e execucao Python
+arbitraria sao bloqueados. `git add`/`git commit -m` so podem operar na branch
+dedicada e nos caminhos do Planner. Inspecoes Docker somente leitura exigem
+aprovacao. Durante o piloto, revise os diffs e evidencias de teste antes de
+permitir processamento continuo.
 
 ## Observabilidade e diagnostico
 

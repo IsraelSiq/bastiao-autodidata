@@ -1,5 +1,24 @@
 # Checkpoint da sessao ? 2026-10-07 (retomada #30)
 
+## Atualizacao posterior: autonomia por issue (#29)
+
+- Continuacao implementada localmente na branch `feat/issue-29-human-approval`; a
+  PR #53 ainda nao recebeu estes novos commits, e nada foi implantado no servidor.
+- Uma aprovacao persistente por issue autoriza trabalho delimitado pelo Planner,
+  testes/validacao, commits locais em `bastiao/issue-N` e publicacao apos os
+  quality gates e Reviewer. Merge permanece manual; remover o numero de
+  `state/approvals.json` revoga a autorizacao.
+- `git add` e `git commit -m` foram liberados somente para arquivos explicitamente
+  permitidos e na branch esperada; push, merge, troca de branch, operacoes
+  destrutivas e arquivos `.git`/credenciais continuam bloqueados.
+- Instalacao de dependencias, comandos JavaScript/Node arbitrarios e inspecao
+  Docker continuam com aprovacao adicional. Scripts padrao de teste/qualidade
+  podem executar sem pausa por etapa.
+- Validacao: `python -m pytest -q` — 109 passed, 2 skipped;
+  `python -m compileall -q src tests` e `git diff --check` passaram.
+- PR #53/issue #29 permanecem pendentes de publicacao/revisao; a implantacao
+  ativa e o estado persistente de aprovacoes nao foram alterados.
+
 ## Estado confirmado
 
 - `main` usada como base: commit `95f1f87` (PR #50 mergeada em 2026-10-07).

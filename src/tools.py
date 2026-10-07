@@ -3,17 +3,20 @@
 Ferramentas que o agente pode usar.
 """
 
-import shutil
+import hashlib
 import shlex
+import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import Optional
-import hashlib
 
 from .action_approval import (
     ActionApprovalStore,
     ActionClass,
     _docker_block_reason,
+    _is_npm_validation_command,
+    _is_sensitive_path,
     classify_action,
 )
 from .process import run_bounded, sanitized_env
@@ -36,6 +39,7 @@ class ToolHandler:
         issue_number: Optional[int] = None,
         approval_store: Optional[ActionApprovalStore] = None,
         require_action_approval: bool = True,
+        expected_branch: Optional[str] = None,
     ):
         """Inicializa o handler.
 
@@ -53,12 +57,15 @@ class ToolHandler:
         self.issue_number = issue_number
         self.approval_store = approval_store
         self.require_action_approval = require_action_approval
+        self.expected_branch = expected_branch
         self._temp_dir: Optional[str] = None
         self.last_approval_request: Optional[dict] = None
         self._approved_action_fingerprint: Optional[str] = None
         self.command_count = 0
         self.allowed_paths = {
-            path.replace("\\", "/").lstrip("./") for path in (allowed_paths or [])
+            normalized[2:] if normalized.startswith("./") else normalized
+            for path in (allowed_paths or [])
+            for normalized in [path.replace("\\", "/")]
         }
 
     def _temp_env(self) -> dict:
@@ -101,7 +108,16 @@ class ToolHandler:
         action_class, target, fingerprint = classify_action(action, self.repo_path)
         if action_class is ActionClass.BLOCKED:
             return f"ERROR: Action blocked: {target}"
-        if action_class is ActionClass.APPROVAL and self.require_action_approval:
+        requires_specific_approval = (
+            action_class is ActionClass.APPROVAL
+            and (
+                self.require_action_approval
+                or target.startswith(
+                    ("dependency installation:", "JavaScript execution:", "Docker inspection:")
+                )
+            )
+        )
+        if requires_specific_approval:
             if self.approval_store is None or self.issue_number is None:
                 return "ERROR: Sensitive action requires an approval store and issue number"
             approved, request = self.approval_store.authorize(
@@ -243,25 +259,35 @@ class ToolHandler:
             and len(argv) > 2
             and argv[1:3] == ["-m", "pip"]
         )
-        if (
-            sensitive_command
-            and self.require_action_approval
-            and self._approved_action_fingerprint
-            != hashlib.sha256(f"run {command}".encode("utf-8")).hexdigest()
-        ):
-            if argv[0] in {"pip", "pip3"} or (
-                argv[0] == "npm" and len(argv) > 1 and argv[1] in {"install", "ci", "update"}
-            ) or (
+        install_command = (
+            argv[0] in {"pip", "pip3"}
+            or (argv[0] == "npm" and len(argv) > 1 and argv[1] in {"install", "ci", "update"})
+            or (
                 argv[0] in {"python", "python3"}
                 and len(argv) > 3
                 and argv[1:4] == ["-m", "pip", "install"]
-            ):
+            )
+        )
+        specific_approval_required = install_command or argv[0] in {"node", "docker"} or (
+            argv[0] == "npm" and not _is_npm_validation_command(argv)
+        )
+        if (
+            sensitive_command
+            and (self.require_action_approval or specific_approval_required)
+            and self._approved_action_fingerprint
+            != hashlib.sha256(f"run {command}".encode("utf-8")).hexdigest()
+        ):
+            if install_command:
                 return "ERROR: Package installation is not allowed without action approval"
             return "ERROR: Sensitive command is not allowed without action approval"
         if argv[0] == "git":
-            allowed_git_actions = {"status", "diff", "log", "show", "ls-files"}
+            allowed_git_actions = {"status", "diff", "log", "show", "ls-files", "add", "commit"}
             if len(argv) < 2 or argv[1] not in allowed_git_actions:
                 return f"ERROR: Git action not allowed: {argv[1] if len(argv) > 1 else '(empty)'}"
+            if argv[1] in {"add", "commit"}:
+                git_error = self._validate_git_write(argv)
+                if git_error:
+                    return f"ERROR: {git_error}"
         if argv[0] in {"pip", "pip3"} and (len(argv) < 2 or argv[1] != "install"):
             return "ERROR: Package installation is not allowed except via pip install"
         if self.command_count >= self.max_commands:
@@ -269,8 +295,11 @@ class ToolHandler:
         if sensitive_command and self._approved_action_fingerprint is not None:
             self._approved_action_fingerprint = None
         self.command_count += 1
+        run_argv = argv
+        if argv[0] == "git" and argv[1] in {"add", "commit"}:
+            run_argv = self._git_write_argv(argv)
         result = run_bounded(
-            argv,
+            run_argv,
             cwd=str(self.repo_path),
             timeout=self.command_timeout_seconds,
             env=sanitized_env(self._temp_env()),
@@ -288,6 +317,11 @@ class ToolHandler:
         if result.stderr:
             output += "\nSTDERR: " + result.stderr
         output = output or f"Command exited with code {result.returncode}"
+        if argv[0] == "git" and len(argv) > 1 and argv[1] in {"add", "commit"}:
+            if self._approved_action_fingerprint == hashlib.sha256(
+                f"run {command}".encode("utf-8")
+            ).hexdigest():
+                self._approved_action_fingerprint = None
         if result.output_truncated:
             output += (
                 f"\n[output truncated at "
@@ -299,6 +333,82 @@ class ToolHandler:
                 + f"\n[output truncated at {self.max_output_chars} characters]"
             )
         return output
+
+    def _git_write_argv(self, argv: list[str]) -> list[str]:
+        """Disable repository hooks for the narrowly-scoped local Git writes."""
+        hooks_dir = Path(self._temp_env()["TMPDIR"]) / "empty-git-hooks"
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+        return ["git", "-c", f"core.hooksPath={hooks_dir}", *argv[1:]]
+
+    def _git_output(self, *args: str) -> str:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=self.repo_path,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            env=sanitized_env(self._temp_env()),
+        )
+        return result.stdout.strip()
+
+    def _validate_git_write(self, argv: list[str]) -> Optional[str]:
+        """Constrain staging and commits to this issue's isolated planner scope."""
+        if (
+            not self.expected_branch
+            or not self.issue_number
+            or self.expected_branch != f"bastiao/issue-{self.issue_number}"
+        ):
+            return "Git writes require the expected issue branch"
+        try:
+            current_branch = self._git_output("branch", "--show-current")
+        except (OSError, subprocess.SubprocessError) as error:
+            return f"Unable to verify the current Git branch: {error}"
+        if current_branch != self.expected_branch:
+            return f"Git writes are restricted to {self.expected_branch}"
+
+        if argv[1] == "add":
+            paths = argv[2:]
+            if paths[:1] == ["--"]:
+                paths = paths[1:]
+            if not paths or any(path.startswith("-") for path in paths):
+                return "git add requires explicit repository-relative file paths"
+            for path in paths:
+                if any(character in path for character in (":", "*", "?", "[")):
+                    return "Git pathspec syntax is not allowed"
+                try:
+                    resolved = self._safe_path(path)
+                except ValueError:
+                    return "Git staging path escapes the workspace"
+                normalized = resolved.relative_to(self.repo_path).as_posix()
+                if _is_sensitive_path(Path(normalized)):
+                    return "Git staging of credential or Git metadata files is blocked"
+                if self.strict_scope and normalized not in self.allowed_paths:
+                    return f"Git staging path is outside the planner scope: {normalized}"
+                if normalized not in self.allowed_paths:
+                    return f"Git staging path is outside the planner scope: {normalized}"
+                if resolved.exists() and not resolved.is_file():
+                    return "Git staging is limited to individual files"
+                if not resolved.exists():
+                    try:
+                        self._git_output("ls-files", "--error-unmatch", "--", normalized)
+                    except (OSError, subprocess.SubprocessError):
+                        return f"Git staging path does not exist: {normalized}"
+            return None
+
+        if len(argv) != 4 or argv[2] != "-m" or not argv[3].strip():
+            return "git commit only allows `git commit -m <message>`"
+        try:
+            staged_paths = self._git_output("diff", "--cached", "--name-only").splitlines()
+        except (OSError, subprocess.SubprocessError) as error:
+            return f"Unable to verify staged Git files: {error}"
+        if not staged_paths:
+            return "Git commit requires staged files"
+        for path in staged_paths:
+            normalized = Path(path).as_posix()
+            if _is_sensitive_path(Path(normalized)) or normalized not in self.allowed_paths:
+                return f"Git commit contains a file outside the planner scope: {normalized}"
+        return None
 
     def search_code(self, pattern: str) -> str:
         """Busca no codigo.

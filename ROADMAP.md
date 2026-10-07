@@ -49,6 +49,18 @@ A PR #49 entregou `cycle_id`, healthcheck read-only, retry/backoff limitado para
 
 A issue permanece aberta para revisao humana/merge e confirmacao operacional final. Nao iniciar operacao continua ou modo 24/7 antes disso.
 
+### Autonomia por issue (em validacao nesta branch)
+
+A aprovacao inicial por issue autoriza leitura, alteracoes somente nos caminhos
+do Planner, validacao/testes e commits locais apenas na branch
+`bastiao/issue-N`. Quality Gate, validacao de diff e Reviewer continuam
+obrigatorios antes da publicacao automatica da PR; merge continua manual.
+Instalacao de dependencias, execucao JavaScript/Node arbitraria e inspecao Docker
+ainda exigem aprovacao especifica; scripts padrao de teste/qualidade sao liberados.
+Esta mudanca esta em `feat/issue-29-human-approval`,
+nao foi implantada no servidor e nao conclui a fase de providers/inteligencia
+descrita pela issue #31.
+
 ## Proxima sequencia
 
 1. Revisar se a politica de quota agregada do bind mount `workspace/` e necessaria antes de fechar #30; documentar explicitamente se ficar fora do escopo de implementacao.

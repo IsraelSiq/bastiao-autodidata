@@ -36,6 +36,8 @@ def _is_sensitive_path(path: Path) -> bool:
     sensitive_names = {"token", "tokens", "api_key", "access_token", "private_key"}
     for part in path.parts:
         name = part.lower()
+        if name == ".git":
+            return True
         if name.startswith(".env") or any(
             marker in name for marker in ("secret", "credential", "password")
         ):
@@ -82,6 +84,20 @@ def _docker_block_reason(argv: list[str]) -> str | None:
     if args[0] in {"version", "info", "ps", "images", "inspect", "logs", "stats"}:
         return None
     return f"Docker operation {args[0]} is blocked"
+
+
+def _is_npm_validation_command(argv: list[str]) -> bool:
+    """Allow only standard test and quality scripts without per-action approval."""
+    if argv == ["npm", "test"]:
+        return True
+    return len(argv) == 3 and argv[:2] == ["npm", "run"] and argv[2] in {
+        "test",
+        "test:unit",
+        "test:vitest",
+        "lint",
+        "typecheck",
+        "check",
+    }
 
 
 def _references_external_path(arguments: list[str], repo_root: Path) -> bool:
@@ -175,9 +191,11 @@ def classify_action(action: str, repo_path: str | Path) -> tuple[ActionClass, st
             fingerprint,
         )
     if executable == "git" and len(argv) > 1 and argv[1] in {
-        "push", "commit", "reset", "clean", "checkout", "switch", "branch",
+        "push", "reset", "clean", "checkout", "switch", "branch",
     }:
         return ActionClass.BLOCKED, f"blocked git command {argv[1]}", fingerprint
+    if executable == "git" and len(argv) > 1 and argv[1] in {"add", "commit"}:
+        return ActionClass.APPROVAL, f"local Git write: {argv[1]}", fingerprint
     if executable == "git" and any(
         option in argv for option in ("--no-index", "--git-dir", "--work-tree")
     ):
@@ -201,6 +219,8 @@ def classify_action(action: str, repo_path: str | Path) -> tuple[ActionClass, st
             f"dependency installation: {_safe_command_context(argv)}",
             fingerprint,
         )
+    if executable == "npm" and _is_npm_validation_command(argv):
+        return ActionClass.AUTOMATIC, f"verification command {argv[1]}", fingerprint
     if executable in {"python", "python3"}:
         if len(argv) > 2 and argv[1:3] in (
             ["-m", "pytest"],

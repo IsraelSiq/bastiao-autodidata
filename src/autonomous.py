@@ -62,8 +62,8 @@ class AutonomousRunner:
     def _authorize_publication(
         self, issue_number: int, branch: str, base_sha: str, files: list[dict]
     ) -> tuple[bool, dict | None]:
-        """Require a one-time human decision before creating remote GitHub objects."""
-        if os.getenv("BASTIAO_REQUIRE_ACTION_APPROVAL", "true").lower() != "true":
+        """Apply the optional per-action approval before creating GitHub objects."""
+        if os.getenv("BASTIAO_REQUIRE_ACTION_APPROVAL", "false").lower() != "true":
             return True, None
         manifest = [
             {
@@ -212,6 +212,17 @@ Steps:
         return True
 
     @staticmethod
+    def _has_plan_scope_diff(plan: IssuePlan, files: list[dict]) -> bool:
+        """Require every published file to have been explicitly allowed by the Planner."""
+        allowed_paths = {
+            normalized[2:] if normalized.startswith("./") else normalized
+            for path in plan.allowed_paths
+            for normalized in [path.replace("\\", "/")]
+        }
+        changed_paths = {file["path"].replace("\\", "/") for file in files}
+        return bool(changed_paths) and changed_paths.issubset(allowed_paths)
+
+    @staticmethod
     def _with_retry(func):
         """Retry idempotent GitHub reads; writes are never retried to avoid duplicates."""
         return retry_transient(
@@ -308,8 +319,9 @@ Steps:
                 issue_number=issue.number,
                 approval_store=self.action_approval_store,
                 require_action_approval=(
-                    os.getenv("BASTIAO_REQUIRE_ACTION_APPROVAL", "true").lower() == "true"
+                    os.getenv("BASTIAO_REQUIRE_ACTION_APPROVAL", "false").lower() == "true"
                 ),
+                expected_branch=branch,
             )
             agent = SWEAgent(
                 model=OmniRouteModel(),
@@ -364,6 +376,7 @@ Steps:
                 return {"issue": issue.number, "status": "failed", "files": 0}
 
             in_scope = self._has_in_scope_diff(issue.title, issue.body or "", files)
+            in_scope = in_scope and self._has_plan_scope_diff(plan, files)
             if not in_scope:
                 state.fail("patch is outside issue scope")
                 state.save(self.state_dir)

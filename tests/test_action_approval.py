@@ -15,8 +15,15 @@ def test_classifies_sensitive_and_blocked_actions(tmp_path: Path):
     assert classify_action("run docker run image", tmp_path)[0] is ActionClass.BLOCKED
     assert classify_action("run docker ps", tmp_path)[0] is ActionClass.APPROVAL
     assert classify_action("run git push origin main", tmp_path)[0] is ActionClass.BLOCKED
+    assert classify_action("run git add src/example.py", tmp_path)[0] is ActionClass.APPROVAL
+    assert (
+        classify_action("run git commit -m 'implement issue'", tmp_path)[0]
+        is ActionClass.APPROVAL
+    )
     assert classify_action("run python -c 'import os'", tmp_path)[0] is ActionClass.BLOCKED
     assert classify_action("run python -m pytest -q", tmp_path)[0] is ActionClass.AUTOMATIC
+    assert classify_action("run npm run test:unit", tmp_path)[0] is ActionClass.AUTOMATIC
+    assert classify_action("run npm run custom-script", tmp_path)[0] is ActionClass.APPROVAL
     assert classify_action("run git diff --no-index a b", tmp_path)[0] is ActionClass.BLOCKED
     assert classify_action(r"run pytest C:\outside\test.py", tmp_path)[0] is ActionClass.BLOCKED
     _, context, _ = classify_action(
@@ -33,6 +40,7 @@ def test_classifies_sensitive_and_blocked_actions(tmp_path: Path):
         "read ../outside.txt",
         "read .env",
         "read src/client_secret.py",
+        "read .git/config",
         "write ../outside.txt secret",
         "write credentials.json secret",
     ],
@@ -135,6 +143,28 @@ def test_tool_handler_fails_closed_without_approval_context(tmp_path: Path):
     assert not list(tmp_path.iterdir())
 
 
+def test_issue_authorization_skips_per_action_gate_but_keeps_high_risk_gates(
+    tmp_path: Path, monkeypatch
+):
+    store = ActionApprovalStore(tmp_path / "requests.json", tmp_path / "audit.jsonl")
+    handler = ToolHandler(
+        str(tmp_path),
+        issue_number=29,
+        approval_store=store,
+        require_action_approval=False,
+    )
+
+    assert handler.execute("write pyproject.toml [project]") == "OK: Wrote pyproject.toml"
+    monkeypatch.setattr(
+        "src.tools.run_bounded",
+        lambda argv, **kwargs: ProcessResult(0, "tests passed", ""),
+    )
+    assert handler.execute("run npm run test:unit") == "tests passed"
+    assert "requires human approval" in handler.execute("run npm run custom-script")
+    assert store.list_requests()[0]["action"] == "approval:JavaScript"
+    assert "requires human approval" in handler.execute("run pip install package")
+
+
 def test_tool_handler_executes_package_install_only_after_exact_approval(
     tmp_path: Path, monkeypatch
 ):
@@ -183,3 +213,55 @@ def test_tool_handler_blocks_dangerous_actions_before_side_effects(tmp_path: Pat
     assert handler.execute("run docker compose down -v").startswith("ERROR: Action blocked")
     assert handler.execute("read ../outside.txt").startswith("ERROR: Action blocked")
     assert not list(tmp_path.iterdir())
+
+
+def test_local_git_add_and_commit_are_limited_to_issue_branch_and_planner_scope(
+    tmp_path: Path,
+):
+    import subprocess
+
+    subprocess.run(["git", "init", "-b", "bastiao/issue-29"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "config", "user.name", "Bastiao Test"],
+        cwd=tmp_path,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "bastiao@example.test"],
+        cwd=tmp_path,
+        check=True,
+    )
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "planned.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (tmp_path / "src" / "unplanned.py").write_text("VALUE = 2\n", encoding="utf-8")
+    handler = ToolHandler(
+        str(tmp_path),
+        allowed_paths=["src/planned.py"],
+        strict_scope=True,
+        issue_number=29,
+        expected_branch="bastiao/issue-29",
+        require_action_approval=False,
+    )
+
+    assert "outside the planner scope" in handler.execute("run git add src/unplanned.py")
+    assert handler.execute("run git add src/planned.py").startswith("Command exited with code 0")
+    assert "implement issue 29" in handler.execute("run git commit -m 'implement issue 29'")
+    assert subprocess.run(
+        ["git", "status", "--porcelain"], cwd=tmp_path, check=True, capture_output=True, text=True
+    ).stdout == "?? src/unplanned.py\n"
+
+
+def test_local_git_write_requires_expected_branch(tmp_path: Path):
+    import subprocess
+
+    subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True)
+    (tmp_path / "planned.py").write_text("VALUE = 1\n", encoding="utf-8")
+    handler = ToolHandler(
+        str(tmp_path),
+        allowed_paths=["planned.py"],
+        issue_number=29,
+        expected_branch="bastiao/issue-29",
+        require_action_approval=False,
+    )
+
+    assert "restricted to bastiao/issue-29" in handler.execute("run git add planned.py")

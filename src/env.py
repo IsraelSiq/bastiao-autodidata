@@ -36,6 +36,7 @@ class SandboxEnv:
         issue_number: Optional[int] = None,
         approval_store: Optional[ActionApprovalStore] = None,
         require_action_approval: bool = True,
+        expected_branch: Optional[str] = None,
     ):
         """Inicializa o ambiente.
 
@@ -56,6 +57,7 @@ class SandboxEnv:
             issue_number=issue_number,
             approval_store=approval_store,
             require_action_approval=require_action_approval,
+            expected_branch=expected_branch,
         )
         self.state = EnvState()
 
