@@ -1,4 +1,4 @@
-> **Checkpoint operacional (2026-09-15):** a PR #48 foi mergeada na `main` (commit `6312fc4`). Foram concluidos Quality Gate, escopo estrito e limites portaveis do sandbox. O container deve permanecer parado; a proxima fase e a issue #37, ainda nao iniciada. Consulte [`ROADMAP.md`](ROADMAP.md) e [`docs/SESSION-CHECKPOINT.md`](docs/SESSION-CHECKPOINT.md) antes de retomar.
+> **Checkpoint operacional (2026-10-07):** a PR #49 foi mergeada na `main` (commit `94e107b`), concluindo os incrementos funcionais da issue #37. As issues #30 e #37 continuam abertas enquanto a validacao Docker/runtime e a revisao humana nao forem concluidas. A implantacao existente nao foi alterada nesta retomada. Veja [`ROADMAP.md`](ROADMAP.md) e [`docs/SESSION-CHECKPOINT.md`](docs/SESSION-CHECKPOINT.md).
 
 # Bastiao Autodidata
 
@@ -153,7 +153,7 @@ As variaveis documentadas em `.env.example` sao:
 | `BASTIAO_QUALITY_GATE_TIMEOUT_SECONDS` | nao | `120` | Timeout de cada comando do Quality Gate |
 | `BASTIAO_COMMAND_TIMEOUT_SECONDS` | nao | `60` | Timeout de cada comando do sandbox |
 | `BASTIAO_MAX_COMMANDS` | nao | `100` | Maximo de comandos por tarefa |
-| `BASTIAO_MAX_OUTPUT_CHARS` | nao | `10000` | Limite da saida capturada por comando |
+| `BASTIAO_MAX_OUTPUT_CHARS` | nao | `10000` | Limite de caracteres devolvidos por comando; stdout/stderr sao limitados antes da captura em memoria |
 | `BASTIAO_MAX_WRITE_BYTES` | nao | `1000000` | Limite de bytes por arquivo escrito |
 | `BASTIAO_REQUIRE_APPROVAL` | nao | `true` | Exige aprovacao no arquivo persistente antes da execucao |
 | `BASTIAO_APPROVAL_FILE` | nao | `/var/lib/bastiao/approvals.json` | Arquivo JSON com issues aprovadas |

@@ -4,7 +4,6 @@ Ferramentas que o agente pode usar.
 """
 
 import shutil
-import subprocess
 import shlex
 import tempfile
 from pathlib import Path
@@ -201,6 +200,7 @@ class ToolHandler:
             env=sanitized_env(self._temp_env()),
             memory_mb=self.memory_limit_mb,
             cpu_seconds=self.cpu_limit_seconds,
+            max_output_bytes=max(1, self.max_output_chars * 4),
         )
         if result.timed_out:
             return f"ERROR: Timeout ({self.command_timeout_seconds}s)"
@@ -208,6 +208,11 @@ class ToolHandler:
         if result.stderr:
             output += "\nSTDERR: " + result.stderr
         output = output or f"Command exited with code {result.returncode}"
+        if result.output_truncated:
+            output += (
+                f"\n[output truncated at "
+                f"{max(1, self.max_output_chars * 4)} bytes per stream]"
+            )
         if len(output) > self.max_output_chars:
             output = (
                 output[: self.max_output_chars]
@@ -225,15 +230,25 @@ class ToolHandler:
             Resultados
         """
         try:
-            result = subprocess.run(
+            result = run_bounded(
                 ["grep", "-r", "--include=*.py", pattern, "."],
-                capture_output=True,
-                text=True,
-                timeout=self.command_timeout_seconds,
                 cwd=str(self.repo_path),
+                timeout=self.command_timeout_seconds,
+                env=sanitized_env(self._temp_env()),
+                memory_mb=self.memory_limit_mb,
+                cpu_seconds=self.cpu_limit_seconds,
+                max_output_bytes=max(1, self.max_output_chars * 4),
             )
-
+            if result.timed_out:
+                return f"ERROR: Timeout ({self.command_timeout_seconds}s)"
             output = result.stdout or "No matches found"
+            if result.stderr:
+                output += "\nSTDERR: " + result.stderr
+            if result.output_truncated:
+                output += (
+                    f"\n[output truncated at "
+                    f"{max(1, self.max_output_chars * 4)} bytes per stream]"
+                )
             if len(output) > self.max_output_chars:
                 return (
                     output[: self.max_output_chars]
@@ -241,8 +256,8 @@ class ToolHandler:
                 )
             return output
 
-        except Exception as e:
-            return f"ERROR: {e}"
+        except OSError as error:
+            return f"ERROR: {error}"
 
     def list_files(self, path: str = "") -> str:
         """Lista arquivos.

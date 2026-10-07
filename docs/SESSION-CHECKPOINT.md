@@ -1,45 +1,42 @@
-# Checkpoint da sessao — 2026-09-15
+# Checkpoint da sessao ? 2026-10-07
 
 ## Estado confirmado
 
-- PRs historicas ate a #47: mergeadas na main.
-- PR #48: mergeada na main.
-- Commit de merge: `6312fc4`.
-- Branch implementada: `feat/quality-gate`.
-- Proxima fase ainda nao iniciada: issue #37.
-- Container Bastiao: deve permanecer parado ate nova aprovacao humana.
+- `main`: commit `94e107b`.
+- PR #49: mergeada em 2026-10-07; adicionou incrementos funcionais da issue #37.
+- Issues #30 e #37: abertas no GitHub; nenhuma PR estava aberta no inicio da retomada.
+- A implantacao no servidor estava ativa quando verificada e nao foi reiniciada, reconstruida nem atualizada.
+- O checkout operacional tinha trabalho local nao commitado e permaneceu intocado.
+- Todas as validacoes ocorreram em clone e containers descartaveis.
 
-## Entregas da PR #48
+## Validacao concluida antes da correcao atual
 
-- Quality Gate deterministico antes de commit/PR.
-- Bloqueio quando testes, compileall, lint, typecheck ou diff check falham.
-- Escopo estrito e rejeicao de planos sem caminhos permitidos.
-- Abortamento imediato apos escrita fora do escopo.
-- Timeout por comando.
-- Limite de comandos por tarefa.
-- Limite de saida capturada.
-- Limite de bytes por arquivo escrito.
+- `docker compose config --quiet`: passou.
+- `python -m compileall -q .`: passou.
+- Suite completa em container descartavel: 77 testes passaram.
+- Suite focada em Docker com `--memory=512m --cpus=1`: 32 testes passaram.
+- Healthcheck somente leitura: Ollama, ChromaDB e workspace responderam; a sonda GitHub nao recebeu credenciais e nao validou conectividade autenticada.
+- Nao houve ciclo de agente, alteracao da aprovacao persistente ou operacao de escrita no workspace de producao.
 
-## Validacao
+## Achado e trabalho em andamento
 
-- 38 testes passaram na branch da PR.
-- `python -m compileall -q .` passou.
-- `git diff --check` passou.
-- Nao havia check run configurado no GitHub para a PR #48.
+A prova de estresse no container descartavel reproduziu uma lacuna em `src/process.py`: `communicate()` acumulou 32 MiB de stdout antes de a ferramenta truncar o texto devolvido. A busca de codigo tambem usava captura sem limite e nao removia credenciais do ambiente do processo.
 
-## Pendente
+A branch `fix/bounded-subprocess-output` adiciona drenagem de stdout/stderr com teto em bytes, continua drenando saida excedente para nao bloquear os pipes, sinaliza truncamento e usa o executor limitado/sanitizado na busca. Foram incluidos testes para ambas as streams, rlimit de CPU, busca e evidencia do Quality Gate.
 
-Na issue #30: limites de CPU, memoria, processos filhos, arquivos temporarios e limpeza garantida, com testes dependentes do Docker/runtime.
+Validacao local nesta branch: `python -m pytest -q` ? 78 passaram, 2 ignorados; `python -m compileall -q .` e `git diff --check` passaram. Ainda falta construir/testar a imagem Docker com essa correcao e revisar/abrir PR. A branch ainda nao foi aplicada ao servidor.
 
-No roadmap: #37 observabilidade; #36 providers/fallback; #35 memoria persistente; #38 pipeline autodidata.
+## Pendencias para retomar
 
-## Como retomar
+1. Revisar os diffs e validar a branch no container descartavel, incluindo volume de saida maior que o buffer e limite de CPU/memoria.
+2. Atualizar a PR/roadmap apenas com evidencias do Docker corrigido.
+3. Para concluir #30, decidir com o operador os limites adequados de container; o Compose atual nao define `mem_limit`, `cpus` ou `pids_limit`, nem quota de disco para temporarios/workspace.
+4. Revisar #37, que ja tem implementacao via PR #49, mas ainda requer validacao/revisao humana conforme roadmap.
+5. Somente depois dessas etapas iniciar #36 (providers/fallback).
 
-1. Ler `ROADMAP.md` e `docs/OPERATIONS.md`.
-2. Verificar que a main contem `6312fc4`.
-3. Confirmar que o container esta parado.
-4. Selecionar e aprovar explicitamente uma issue pequena.
-5. Implementar apenas um incremento da #37.
-6. Testar, revisar e mergear manualmente antes de avancar.
+## Guardas operacionais
 
-Nao iniciar 24/7, merge automatico, OpenHands, fallback ilimitado ou memoria persistente antes dos gates previstos.
+- Nao limpar, resetar ou sobrescrever o checkout operacional com mudancas locais.
+- Nao iniciar o container/agente ativo, nao escrever em `state/approvals.json` e nao reutilizar aprovacao antiga.
+- Nao alterar o container ativo; qualquer build/teste deve usar clone, imagem e container descartaveis.
+- Nao habilitar 24/7, merge automatico, dependencia instalada automaticamente ou fallback ilimitado.

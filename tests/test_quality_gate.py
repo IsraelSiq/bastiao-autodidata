@@ -32,13 +32,13 @@ def test_quality_gate_reports_command_failure(tmp_path: Path):
 
     with patch(
         "src.quality_gate.run_bounded",
-        return_value=ProcessResult(1, "failure", ""),
+        return_value=ProcessResult(1, "failure", "", output_truncated=True),
     ):
         result = gate.run()
 
     assert not result.passed
     assert result.checks[-1].name == "git-diff-check"
-    assert result.checks[-1].output == "failure"
+    assert result.checks[-1].output == "failure\n[output truncated at 1000000 bytes per stream]"
     assert result.failure_summary() == "git-diff-check: exit 1"
 
 

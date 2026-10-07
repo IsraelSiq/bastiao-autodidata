@@ -93,6 +93,8 @@ class QualityGate:
                 )
                 duration = round(time.monotonic() - started, 3)
                 output = (completed.stdout + completed.stderr).strip()
+                if completed.output_truncated:
+                    output += "\n[output truncated at 1000000 bytes per stream]"
                 checks.append(
                     GateCheck(
                         name=name,
