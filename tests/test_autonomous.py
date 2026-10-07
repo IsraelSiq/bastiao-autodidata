@@ -59,6 +59,40 @@ def test_github_client_branch_attempt_detection():
     client.session.get.assert_called_once()
 
 
+def test_github_branch_creation_uses_approved_base_sha():
+    from src.github_client import GitHubClient
+
+    client = GitHubClient("owner", "repo", "token")
+    client.session = Mock()
+    client.session.get.return_value.status_code = 404
+
+    client.create_branch("bastiao/issue-29", from_sha="approved-base")
+
+    client.session.get.assert_called_once()
+    client.session.post.assert_called_once()
+    assert client.session.post.call_args.kwargs["json"] == {
+        "ref": "refs/heads/bastiao/issue-29",
+        "sha": "approved-base",
+    }
+
+
+def test_github_branch_creation_rejects_existing_branch_at_other_base():
+    import pytest
+    from src.github_client import GitHubClient
+
+    client = GitHubClient("owner", "repo", "token")
+    client.session = Mock()
+    client.session.get.return_value.status_code = 200
+    client.session.get.return_value.json.return_value = {
+        "object": {"sha": "different-base"}
+    }
+
+    with pytest.raises(ValueError, match="different commit"):
+        client.create_branch("bastiao/issue-29", from_sha="approved-base")
+
+    client.session.post.assert_not_called()
+
+
 def test_runner_reports_github_unavailable(tmp_path, monkeypatch):
     monkeypatch.setenv("BASTIAO_GITHUB_RETRY_ATTEMPTS", "2")
     monkeypatch.setenv("BASTIAO_GITHUB_RETRY_BASE_SECONDS", "0")
@@ -216,7 +250,9 @@ def test_publication_requires_approval_before_any_github_write(tmp_path, monkeyp
     files = [{"path": "src/example.py", "content": "VALUE = 1\n"}]
     monkeypatch.setenv("BASTIAO_REQUIRE_ACTION_APPROVAL", "true")
 
-    allowed, request = runner._authorize_publication(29, "bastiao/issue-29", files)
+    allowed, request = runner._authorize_publication(
+        29, "bastiao/issue-29", "base-sha", files
+    )
 
     assert not allowed
     assert request["status"] == "pending"
@@ -231,20 +267,30 @@ def test_publication_approval_is_bound_to_exact_file_contents(tmp_path, monkeypa
         tmp_path / "requests.json", tmp_path / "audit.jsonl"
     )
     files = [{"path": "src/example.py", "content": "VALUE = 1\n"}]
-    allowed, request = runner._authorize_publication(29, "bastiao/issue-29", files)
+    allowed, request = runner._authorize_publication(
+        29, "bastiao/issue-29", "base-sha", files
+    )
     assert not allowed
     runner.action_approval_store.decide(request["request_id"], "reviewer", True)
 
     changed_files = [{"path": "src/example.py", "content": "VALUE = 2\n"}]
     changed_allowed, changed_request = runner._authorize_publication(
-        29, "bastiao/issue-29", changed_files
+        29, "bastiao/issue-29", "base-sha", changed_files
     )
     assert not changed_allowed
     assert changed_request["status"] == "pending"
 
-    allowed, consumed = runner._authorize_publication(29, "bastiao/issue-29", files)
+    allowed, consumed = runner._authorize_publication(
+        29, "bastiao/issue-29", "base-sha", files
+    )
     assert allowed
     assert consumed["status"] == "consumed"
+
+    new_base_allowed, new_base_request = runner._authorize_publication(
+        29, "bastiao/issue-29", "new-base-sha", files
+    )
+    assert not new_base_allowed
+    assert new_base_request["status"] == "pending"
 
 
 def test_runner_does_not_create_github_branch_before_publication_approval(
@@ -267,7 +313,7 @@ def test_runner_does_not_create_github_branch_before_publication_approval(
         tmp_path / "requests.json", tmp_path / "audit.jsonl"
     )
     runner._is_approved = lambda _issue: True
-    runner._git = Mock()
+    runner._git = Mock(return_value="approved-base")
     runner.planner = Mock()
     runner.planner.build_issue_plan.return_value = SimpleNamespace(
         allowed_paths=["src/planner.py"]

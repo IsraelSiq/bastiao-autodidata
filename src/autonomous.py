@@ -59,7 +59,9 @@ class AutonomousRunner:
             raise ValueError("approval file must contain a JSON list of issue numbers")
         return issue_number in {int(value) for value in approvals}
 
-    def _authorize_publication(self, issue_number: int, branch: str, files: list[dict]) -> tuple[bool, dict | None]:
+    def _authorize_publication(
+        self, issue_number: int, branch: str, base_sha: str, files: list[dict]
+    ) -> tuple[bool, dict | None]:
         """Require a one-time human decision before creating remote GitHub objects."""
         if os.getenv("BASTIAO_REQUIRE_ACTION_APPROVAL", "true").lower() != "true":
             return True, None
@@ -72,7 +74,12 @@ class AutonomousRunner:
         ]
         fingerprint = hashlib.sha256(
             json.dumps(
-                {"issue": issue_number, "branch": branch, "files": manifest},
+                {
+                    "issue": issue_number,
+                    "branch": branch,
+                    "base_sha": base_sha,
+                    "files": manifest,
+                },
                 sort_keys=True,
                 separators=(",", ":"),
             ).encode("utf-8")
@@ -82,7 +89,8 @@ class AutonomousRunner:
         return store.authorize(
             issue_number,
             "publish_changes",
-            f"branch {branch}; files " + ", ".join(file["path"] for file in files),
+            f"branch {branch}; base {base_sha}; files "
+            + ", ".join(file["path"] for file in files),
             fingerprint,
         )
 
@@ -417,8 +425,9 @@ Steps:
                     "Bastiao rejected the generated patch because it replaced too much existing code.",
                 )
                 return {"issue": issue.number, "status": "rejected_unsafe_diff", "files": len(files)}
+            base_sha = self._git("rev-parse", "origin/main")
             publish_allowed, publish_request = self._authorize_publication(
-                issue.number, branch, files
+                issue.number, branch, base_sha, files
             )
             if not publish_allowed:
                 request_id = publish_request["request_id"]
@@ -449,7 +458,7 @@ Steps:
                     "status": "action_denied",
                     "request_id": request_id,
                 }
-            self.client.create_branch(branch)
+            self.client.create_branch(branch, from_sha=base_sha)
             self.client.commit_files(
                 files,
                 f"feat: implement #{issue.number} {issue.title}",

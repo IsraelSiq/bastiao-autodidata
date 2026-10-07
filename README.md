@@ -93,10 +93,10 @@ A aprovacao da issue permite iniciar o trabalho, mas nao aprova automaticamente
 operacoes sensiveis nem a publicacao no GitHub. Escritas em arquivos de
 configuracao/dependencias e execucao de comandos JavaScript ou instalacao de
 pacotes pausam o ciclo e criam uma solicitacao persistente. Cada aprovacao fica
-vinculada a issue, a acao e ao fingerprint do conteudo/comando exato; e de uso
-unico e expira. Se o conteudo mudar, a aprovacao anterior nao vale. Publicar
-cria branch remota, commit e PR apenas depois de uma aprovacao separada do
-manifesto dos arquivos validados.
+vinculada a issue, acao, base Git e fingerprint do conteudo/comando exato; e
+de uso unico e expira. Se o conteudo ou a base mudar, a aprovacao anterior nao
+vale. Publicar cria branch remota, commit e PR apenas depois de uma aprovacao
+separada do manifesto dos arquivos validados.
 
 Comandos privilegiados, destrutivos, de sistema, acesso fora do workspace,
 Podman, operacoes Docker mutaveis, alteracoes de Git e execucao Python
