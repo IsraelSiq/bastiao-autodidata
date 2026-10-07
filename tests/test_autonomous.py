@@ -1,4 +1,6 @@
+import json
 from unittest.mock import Mock, patch
+from uuid import UUID
 import requests
 from src.metrics import CycleMetrics
 
@@ -62,10 +64,14 @@ def test_runner_reports_github_unavailable(tmp_path):
     runner.metrics = CycleMetrics(str(tmp_path))
     runner.client.list_issues.side_effect = requests.ConnectionError("network down")
 
-    assert runner.run_once() == {
-        "status": "github_unavailable",
-        "error": "ConnectionError: network down",
-    }
+    result = runner.run_once()
+
+    assert result["status"] == "github_unavailable"
+    assert result["error"] == "ConnectionError: network down"
+    assert str(UUID(result["cycle_id"])) == result["cycle_id"]
+    record = json.loads((tmp_path / "cycles.jsonl").read_text(encoding="utf-8"))
+    assert record["cycle_id"] == result["cycle_id"]
+    assert record["status"] == result["status"]
 
 
 def test_format_plan_includes_scope_and_acceptance_criteria():

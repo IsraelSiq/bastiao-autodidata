@@ -28,12 +28,16 @@ Mantem o loop de iteracoes com o modelo. O modelo deve retornar somente acoes
 encerra quando nao houve erro nas acoes da iteracao. Respostas sem acoes ou
 conclusoes apos falhas sao solicitadas novamente ate o limite configurado.
 
-### `src/tools.py` e `src/sandbox.py`
+### `src/tools.py` e `src/env.py`
 
-Formam a superficie de ferramentas. O caminho recebido e resolvido contra a
-raiz do repositorio, e comandos sao executados com `shell=False`, timeout e
-allowlist. Escritas ficam limitadas aos caminhos extraidos pelo Planner e
-`complete` e tratado como marcador de controle, nao como comando do shell.
+`src/tools.py`, integrado por `src/env.py`, forma a superficie de ferramentas
+ativa no fluxo issue-to-PR. O caminho recebido e resolvido contra a raiz do
+repositorio, e comandos sao executados com `shell=False`, timeout e allowlist.
+Escritas ficam limitadas aos caminhos extraidos pelo Planner e `complete` e
+tratado como marcador de controle, nao como comando do shell.
+
+`src/sandbox.py` contem sandboxes legados para execucao local de exercicios; nao
+e usado pelo fluxo autonomo documentado aqui.
 
 ### `src/model.py`
 

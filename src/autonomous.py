@@ -7,6 +7,7 @@ from pathlib import Path
 import requests
 import json
 import time
+import uuid
 
 from .swe_agent import SWEAgent
 from .env import SandboxEnv
@@ -170,8 +171,9 @@ Steps:
     def run_once(self) -> dict:
         started = time.monotonic()
         result = self._run_once()
-        self.metrics.record(result, time.monotonic() - started)
-        return result
+        summary = {"cycle_id": str(uuid.uuid4()), **result}
+        self.metrics.record(summary, time.monotonic() - started)
+        return summary
 
     def _run_once(self) -> dict:
         try:

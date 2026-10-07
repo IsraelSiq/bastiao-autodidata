@@ -40,9 +40,16 @@ Entregue: timeout por comando, limite de comandos, limite de saida e limite de b
 
 Pendente: CPU, memoria, processos filhos, arquivos temporarios/limpeza e validacao especifica do Docker/runtime.
 
-### 4. Issue #37 — Observabilidade operacional — proxima etapa
+### 4. Issue #37 — Observabilidade operacional — em andamento
 
-Implementar em incrementos: identificador/resumo por ciclo; healthchecks de GitHub, Ollama, workspace e ChromaDB; retry/backoff limitado; estado github_unavailable persistido; retencao/redaction de logs; testes de reinicio e falha de dependencias.
+Primeiro incremento concluido: cada ciclo recebe um UUID `cycle_id` retornado
+pelo runner e persistido junto ao resultado em `cycles.jsonl`.
+
+Segundo incremento concluido: `python -m src.health` verifica GitHub, Ollama,
+workspace e ChromaDB (opcional) de forma somente leitura.
+
+Pendentes: retry/backoff limitado; estado `github_unavailable` persistido;
+retencao/redaction de logs; testes de reinicio e falha de dependencias.
 
 Nao ampliar para 24/7 antes desses itens.
 

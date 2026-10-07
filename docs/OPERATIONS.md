@@ -27,9 +27,31 @@ Substitua 43 pelo numero explicitamente selecionado. Confirme no log um ciclo pe
 
 ## Proxima retomada segura
 
-A proxima etapa e a issue #37, dividida em incrementos pequenos: identificador/resumo por ciclo; healthchecks de GitHub, Ollama, workspace e ChromaDB; retry/backoff limitado e estado github_unavailable; retencao/redaction; testes de reinicio e falha de dependencias.
+O primeiro incremento da issue #37 foi implementado: cada execucao de `run_once`
+gera um UUID `cycle_id`, inclui-o no resumo retornado pelo runner e grava o mesmo
+identificador junto com o resultado em `cycles.jsonl`. O resumo continua
+incluindo os campos especificos do resultado, como `status`, `issue` e `files`.
 
-Depois de cada incremento: executar testes, revisar a PR e atualizar ROADMAP.md. Nao executar a etapa seguinte automaticamente.
+O segundo incremento adicionou healthchecks somente leitura (`src/health.py`):
+
+```bash
+python -m src.health
+docker compose --profile agent run --rm --no-deps bastiao python -m src.health
+```
+
+A saida e um JSON com GitHub, Ollama, workspace e ChromaDB (nome, resultado,
+detalhe e duracao). O codigo de saida e 0 quando todos os checks obrigatorios
+passam. ChromaDB e opcional, pois o fluxo atual nao o utiliza. O token nunca e
+incluido na saida; cada sonda usa `BASTIAO_HEALTH_TIMEOUT_SECONDS` (padrao 5) e
+`CHROMA_URL` (padrao `http://127.0.0.1:8000`). Executar o comando nao inicia o
+ciclo do agente.
+
+Proximos incrementos, ainda pendentes: retry/backoff limitado e estado
+`github_unavailable` persistido; retencao/redaction; testes de reinicio e falha
+de dependencias.
+
+Depois de cada incremento: executar testes, revisar a PR e atualizar
+`ROADMAP.md`. Nao executar a etapa seguinte automaticamente.
 
 ## Ciclo bem-sucedido
 
