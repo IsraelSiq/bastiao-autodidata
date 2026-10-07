@@ -119,3 +119,11 @@ BASTIAO_COMMAND_TIMEOUT_SECONDS encerra comandos demorados **e todos os processo
 ## Historico validado
 
 O teste controlado da issue #43 terminou com a PR #46 contendo somente src/health_marker.py com HEALTH_MARKER = "ok". As PRs #45, #46, #47 e #48 foram revisadas e mergeadas manualmente. A PR #48 e o ultimo marco desta sessao. A proxima retomada e a issue #37, conforme ROADMAP.md.
+
+## Chat do Open WebUI lendo o GitHub (somente leitura)
+
+`openwebui/github_reader_tool.py` e uma Tool do Open WebUI que deixa o chat ler links, issues, PRs e arquivos (ex.: `ROADMAP.md`) dos repositorios permitidos. Nao escreve nada no GitHub: criar branches/PRs continua sendo papel do agente, com aprovacao humana.
+
+Instalacao: Open WebUI > Workspace > Tools > `+` > colar o conteudo do arquivo > Salvar. Em Valves, ajuste `allowed_repos` e, se quiser repos privados, informe um token fine-grained somente leitura (Contents, Issues, Pull requests: Read). Depois, no chat, ative a Tool e use um modelo com suporte a tool calling (ex.: `qwen3:8b`).
+
+Exemplos: "leia https://github.com/IsraelSiq/bastiao-autodidata/issues/37", "liste as issues abertas e proponha a proxima", "leia o ROADMAP.md".
