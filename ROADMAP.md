@@ -48,8 +48,12 @@ pelo runner e persistido junto ao resultado em `cycles.jsonl`.
 Segundo incremento concluido: `python -m src.health` verifica GitHub, Ollama,
 workspace e ChromaDB (opcional) de forma somente leitura.
 
-Pendentes: retry/backoff limitado; estado `github_unavailable` persistido;
-retencao/redaction de logs; testes de reinicio e falha de dependencias.
+Terceiro incremento concluido: retry/backoff limitado para leituras do GitHub
+(sem retry de escritas) e estado persistido em `status.json` com
+`github_unavailable_since`.
+
+Pendentes: retencao/redaction de logs; testes de reinicio e falha de
+dependencias.
 
 Nao ampliar para 24/7 antes desses itens.
 

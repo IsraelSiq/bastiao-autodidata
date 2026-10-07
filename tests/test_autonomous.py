@@ -58,7 +58,9 @@ def test_github_client_branch_attempt_detection():
     client.session.get.assert_called_once()
 
 
-def test_runner_reports_github_unavailable(tmp_path):
+def test_runner_reports_github_unavailable(tmp_path, monkeypatch):
+    monkeypatch.setenv("BASTIAO_GITHUB_RETRY_ATTEMPTS", "2")
+    monkeypatch.setenv("BASTIAO_GITHUB_RETRY_BASE_SECONDS", "0")
     runner = AutonomousRunner.__new__(AutonomousRunner)
     runner.client = Mock()
     runner.metrics = CycleMetrics(str(tmp_path))
@@ -66,6 +68,10 @@ def test_runner_reports_github_unavailable(tmp_path):
 
     result = runner.run_once()
 
+    assert runner.client.list_issues.call_count == 2
+    status = runner.metrics.read_status()
+    assert status["last_cycle"]["cycle_id"] == result["cycle_id"]
+    assert status["github_unavailable_since"]
     assert result["status"] == "github_unavailable"
     assert result["error"] == "ConnectionError: network down"
     assert str(UUID(result["cycle_id"])) == result["cycle_id"]

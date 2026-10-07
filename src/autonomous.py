@@ -19,6 +19,7 @@ from .task_state import TaskExecutionState
 from .metrics import CycleMetrics
 from .reviewer import Reviewer
 from .quality_gate import QualityGate
+from .retry import retry_transient
 
 
 class AutonomousRunner:
@@ -168,6 +169,15 @@ Steps:
                     return False
         return True
 
+    @staticmethod
+    def _with_retry(func):
+        """Retry idempotent GitHub reads; writes are never retried to avoid duplicates."""
+        return retry_transient(
+            func,
+            attempts=int(os.getenv("BASTIAO_GITHUB_RETRY_ATTEMPTS", "3")),
+            base_delay=float(os.getenv("BASTIAO_GITHUB_RETRY_BASE_SECONDS", "1")),
+        )
+
     def run_once(self) -> dict:
         started = time.monotonic()
         result = self._run_once()
@@ -177,7 +187,7 @@ Steps:
 
     def _run_once(self) -> dict:
         try:
-            issues = self.client.list_issues(state="open")
+            issues = self._with_retry(lambda: self.client.list_issues(state="open"))
         except requests.RequestException as error:
             return {
                 "status": "github_unavailable",
@@ -197,7 +207,9 @@ Steps:
             branch = f"bastiao/issue-{issue.number}"
             if not retry:
                 try:
-                    if self.client.has_pull_request_for_branch(branch):
+                    if self._with_retry(
+                        lambda: self.client.has_pull_request_for_branch(branch)
+                    ):
                         skipped.add(issue.number)
                         continue
                 except requests.RequestException as error:

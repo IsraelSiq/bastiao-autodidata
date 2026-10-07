@@ -46,9 +46,22 @@ incluido na saida; cada sonda usa `BASTIAO_HEALTH_TIMEOUT_SECONDS` (padrao 5) e
 `CHROMA_URL` (padrao `http://127.0.0.1:8000`). Executar o comando nao inicia o
 ciclo do agente.
 
-Proximos incrementos, ainda pendentes: retry/backoff limitado e estado
-`github_unavailable` persistido; retencao/redaction; testes de reinicio e falha
-de dependencias.
+O terceiro incremento adicionou retry/backoff limitado e estado persistido.
+Leituras idempotentes do GitHub (listar issues, verificar PR existente) sao
+repetidas ate `BASTIAO_GITHUB_RETRY_ATTEMPTS` vezes (padrao 3) com backoff
+exponencial a partir de `BASTIAO_GITHUB_RETRY_BASE_SECONDS` (padrao 1s, maximo
+30s), somente para falhas de rede, timeout, 429 e 5xx; erros 4xx como 401/403/404
+nao sao repetidos. Escritas (comentarios, commits, PR) nunca sao repetidas, para
+evitar duplicatas. Cada ciclo grava `state/metrics/status.json` (escrita atomica)
+com o ultimo resultado e, enquanto o GitHub estiver indisponivel,
+`github_unavailable_since`, que e removido quando um ciclo volta a funcionar.
+
+```bash
+cat state/metrics/status.json
+```
+
+Proximos incrementos, ainda pendentes: retencao/redaction de logs; testes de
+reinicio e falha de dependencias.
 
 Depois de cada incremento: executar testes, revisar a PR e atualizar
 `ROADMAP.md`. Nao executar a etapa seguinte automaticamente.
