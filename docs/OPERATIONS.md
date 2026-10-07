@@ -4,6 +4,12 @@
 
 As PRs #49 e #50 foram mergeadas na `main`; a #50 limitou a captura de saida dos subprocessos. A branch `fix/issue-30-compose-limits` implementa limites operacionais e passou na suite Docker Linux descartavel (84 testes) e na validacao de configuracao Compose. As issues #30 e #37 permanecem abertas. A implantacao existente nao foi reiniciada nem atualizada, e o checkout operacional com alteracoes locais foi preservado sem limpeza ou reset.
 
+O gate de acoes da issue #29 esta sendo desenvolvido em uma branch isolada e
+ainda nao esta disponivel no container ativo. Os comandos de aprovacao abaixo
+so funcionarao depois que uma versao contendo `src.action_approval` for
+revisada e implantada com aprovacao operacional. Nao reconstrua nem reinicie o
+servico ativo para esta validacao.
+
 Antes de qualquer operacao, confirme o estado real com `docker compose --profile agent ps` e inspecione aprovacoes/checkpoints existentes. Nao reutilize uma aprovacao antiga: selecione a issue com o operador e substitua o arquivo de aprovacao somente depois de confirmacao explicita.
 
 ## Monitoramento basico
@@ -24,6 +30,36 @@ printf '[%s]\n' "$ISSUE_NUMBER" > state/approvals.json
 ```
 
 Com `BASTIAO_REQUIRE_APPROVAL=true`, confirme no log um ciclo `pending_approval` antes da aprovacao e o inicio do SWE-agent somente depois do numero estar no arquivo. Nao reinicie o container durante uma validacao que deva ser somente leitura.
+
+## Aprovacoes de acoes sensiveis
+
+A aprovacao por issue nao autoriza publicacao remota, alteracoes de configuracao
+ou instalacao/execucao de dependencias. O agente persiste cada solicitacao de
+acao e retorna `pending_action_approval` sem executa-la; a branch remota, commit
+e PR tambem aguardam aprovacao separada do manifesto exato dos arquivos.
+
+Revise a acao, o destino, o numero da issue e a validade antes de decidir:
+
+```bash
+docker compose --profile agent exec bastiao python -m src.action_approval list
+docker compose --profile agent exec bastiao python -m src.action_approval approve REQUEST_ID --approver "Seu nome"
+docker compose --profile agent exec bastiao python -m src.action_approval deny REQUEST_ID
+```
+
+A aprovacao expira em uma hora por padrao e so pode ser consumida uma vez. A
+solicitacao pendente expira em 24 horas; os TTLs sao configuraveis por
+`BASTIAO_ACTION_APPROVAL_TTL_SECONDS` e
+`BASTIAO_APPROVAL_REQUEST_TTL_SECONDS`. A decisao nao executa o comando: deixe
+que um ciclo posterior retome a tarefa. Consulte
+`state/action-approval-audit.jsonl` para auditoria; nao edite manualmente o
+arquivo de solicitacoes para converter uma negacao em aprovacao.
+
+Podman, operacoes Docker mutaveis, comandos de sistema, operacoes Git mutaveis,
+caminhos fora do workspace, arquivos com nomes de credenciais e execucao
+Python arbitraria sao bloqueados e nao podem ser aprovados. Inspecoes Docker
+somente leitura exigem aprovacao. Mantenha
+`BASTIAO_REQUIRE_ACTION_APPROVAL=true`; desativar esse gate remove uma
+salvaguarda operacional.
 
 ## Observabilidade e diagnostico
 

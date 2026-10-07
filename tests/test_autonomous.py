@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 from uuid import UUID
 import requests
@@ -203,3 +204,93 @@ def test_runner_exposes_quality_gate_evidence(tmp_path):
     )
     assert result["passed"]
     assert result["checks"][-1]["name"] == "git-diff-check"
+
+
+def test_publication_requires_approval_before_any_github_write(tmp_path, monkeypatch):
+    from src.action_approval import ActionApprovalStore
+
+    runner = AutonomousRunner.__new__(AutonomousRunner)
+    runner.action_approval_store = ActionApprovalStore(
+        tmp_path / "requests.json", tmp_path / "audit.jsonl"
+    )
+    files = [{"path": "src/example.py", "content": "VALUE = 1\n"}]
+    monkeypatch.setenv("BASTIAO_REQUIRE_ACTION_APPROVAL", "true")
+
+    allowed, request = runner._authorize_publication(29, "bastiao/issue-29", files)
+
+    assert not allowed
+    assert request["status"] == "pending"
+
+
+def test_publication_approval_is_bound_to_exact_file_contents(tmp_path, monkeypatch):
+    from src.action_approval import ActionApprovalStore
+
+    monkeypatch.setenv("BASTIAO_REQUIRE_ACTION_APPROVAL", "true")
+    runner = AutonomousRunner.__new__(AutonomousRunner)
+    runner.action_approval_store = ActionApprovalStore(
+        tmp_path / "requests.json", tmp_path / "audit.jsonl"
+    )
+    files = [{"path": "src/example.py", "content": "VALUE = 1\n"}]
+    allowed, request = runner._authorize_publication(29, "bastiao/issue-29", files)
+    assert not allowed
+    runner.action_approval_store.decide(request["request_id"], "reviewer", True)
+
+    changed_files = [{"path": "src/example.py", "content": "VALUE = 2\n"}]
+    changed_allowed, changed_request = runner._authorize_publication(
+        29, "bastiao/issue-29", changed_files
+    )
+    assert not changed_allowed
+    assert changed_request["status"] == "pending"
+
+    allowed, consumed = runner._authorize_publication(29, "bastiao/issue-29", files)
+    assert allowed
+    assert consumed["status"] == "consumed"
+
+
+def test_runner_does_not_create_github_branch_before_publication_approval(
+    tmp_path, monkeypatch
+):
+    from src.action_approval import ActionApprovalStore
+
+    monkeypatch.setenv("BASTIAO_REQUIRE_ACTION_APPROVAL", "true")
+    runner = AutonomousRunner.__new__(AutonomousRunner)
+    runner.client = Mock()
+    runner.client.list_issues.return_value = [
+        SimpleNamespace(number=29, title="Improve planner", body="Update `src/planner.py`")
+    ]
+    runner.client.has_pull_request_for_branch.return_value = False
+    runner.workspace = tmp_path
+    runner.state_root = tmp_path
+    runner.state_dir = str(tmp_path / "tasks")
+    runner.max_iterations = 1
+    runner.action_approval_store = ActionApprovalStore(
+        tmp_path / "requests.json", tmp_path / "audit.jsonl"
+    )
+    runner._is_approved = lambda _issue: True
+    runner._git = Mock()
+    runner.planner = Mock()
+    runner.planner.build_issue_plan.return_value = SimpleNamespace(
+        allowed_paths=["src/planner.py"]
+    )
+    runner._format_plan = Mock(return_value="plan")
+    runner._changed_files = lambda: [{"path": "src/planner.py", "content": "VALUE = 1\n"}]
+    runner._has_in_scope_diff = lambda *_args: True
+    runner._run_quality_gate = lambda: {"passed": True, "checks": []}
+    runner._has_safe_diff = lambda: True
+    runner.reviewer = Mock()
+    runner.reviewer.review.return_value = SimpleNamespace(approved=True, reasons=[])
+    sandbox = SimpleNamespace(tools=SimpleNamespace(last_approval_request=None), cleanup=Mock())
+    task_state = Mock()
+
+    with patch("src.autonomous.SandboxEnv", return_value=sandbox), patch(
+        "src.autonomous.SWEAgent"
+    ) as agent_class, patch(
+        "src.autonomous.create_task_state", return_value=task_state
+    ):
+        agent_class.return_value.solve.return_value = True
+        result = runner._run_once()
+
+    assert result["status"] == "pending_action_approval"
+    runner.client.create_branch.assert_not_called()
+    runner.client.commit_files.assert_not_called()
+    runner.client.create_pull_request.assert_not_called()

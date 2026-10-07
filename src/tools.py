@@ -8,7 +8,14 @@ import shlex
 import tempfile
 from pathlib import Path
 from typing import Optional
+import hashlib
 
+from .action_approval import (
+    ActionApprovalStore,
+    ActionClass,
+    _docker_block_reason,
+    classify_action,
+)
 from .process import run_bounded, sanitized_env
 
 
@@ -26,6 +33,9 @@ class ToolHandler:
         max_write_bytes: int = 1_000_000,
         memory_limit_mb: int = 0,
         cpu_limit_seconds: int = 0,
+        issue_number: Optional[int] = None,
+        approval_store: Optional[ActionApprovalStore] = None,
+        require_action_approval: bool = True,
     ):
         """Inicializa o handler.
 
@@ -40,7 +50,12 @@ class ToolHandler:
         self.max_write_bytes = max_write_bytes
         self.memory_limit_mb = memory_limit_mb
         self.cpu_limit_seconds = cpu_limit_seconds
+        self.issue_number = issue_number
+        self.approval_store = approval_store
+        self.require_action_approval = require_action_approval
         self._temp_dir: Optional[str] = None
+        self.last_approval_request: Optional[dict] = None
+        self._approved_action_fingerprint: Optional[str] = None
         self.command_count = 0
         self.allowed_paths = {
             path.replace("\\", "/").lstrip("./") for path in (allowed_paths or [])
@@ -83,6 +98,27 @@ class ToolHandler:
 
         command = parts[0]
         args = parts[1] if len(parts) > 1 else ""
+        action_class, target, fingerprint = classify_action(action, self.repo_path)
+        if action_class is ActionClass.BLOCKED:
+            return f"ERROR: Action blocked: {target}"
+        if action_class is ActionClass.APPROVAL and self.require_action_approval:
+            if self.approval_store is None or self.issue_number is None:
+                return "ERROR: Sensitive action requires an approval store and issue number"
+            approved, request = self.approval_store.authorize(
+                self.issue_number,
+                action_class.value + ":" + target.split(" ", 1)[0],
+                target,
+                fingerprint,
+            )
+            self.last_approval_request = request
+            if not approved:
+                return (
+                    f"ERROR: Sensitive action requires human approval "
+                    f"(request {request['request_id']}, status {request['status']}). "
+                    "Review with `python -m src.action_approval list`; approve with "
+                    "`python -m src.action_approval approve <request_id> --approver <name>`."
+                )
+            self._approved_action_fingerprint = fingerprint
 
         if command == "read":
             return self.read_file(args)
@@ -112,6 +148,9 @@ class ToolHandler:
             filepath = self._safe_path(path)
         except ValueError as error:
             return f"ERROR: {error}"
+        action_class, target, _ = classify_action(f"read {path}", self.repo_path)
+        if action_class is ActionClass.BLOCKED:
+            return f"ERROR: Action blocked: {target}"
         if not filepath.exists():
             return f"ERROR: File not found: {path}"
         if not filepath.is_file():
@@ -138,6 +177,16 @@ class ToolHandler:
 
         path = parts[0]
         content = parts[1]
+        action_fingerprint = hashlib.sha256(
+            f"write {args}".encode("utf-8")
+        ).hexdigest()
+        action_class, action_target, _ = classify_action(f"write {args}", self.repo_path)
+        if (
+            action_class is ActionClass.APPROVAL
+            and self.require_action_approval
+            and self._approved_action_fingerprint != action_fingerprint
+        ):
+            return "ERROR: Configuration writes require approval through the action gate"
         if len(content.encode("utf-8")) > self.max_write_bytes:
             return f"ERROR: File content exceeds limit ({self.max_write_bytes} bytes)"
 
@@ -145,11 +194,15 @@ class ToolHandler:
             filepath = self._safe_path(path)
         except ValueError as error:
             return f"ERROR: {error}"
+        if action_class is ActionClass.BLOCKED:
+            return f"ERROR: Action blocked: {action_target}"
         normalized = filepath.relative_to(self.repo_path).as_posix()
         if self.strict_scope and not self.allowed_paths:
             return "ERROR: Planner scope is empty; writes are disabled"
         if self.allowed_paths and normalized not in self.allowed_paths:
             return f"ERROR: Path is outside the planner scope: {path}"
+        if self._approved_action_fingerprint == action_fingerprint:
+            self._approved_action_fingerprint = None
         filepath.parent.mkdir(parents=True, exist_ok=True)
 
         with open(filepath, "w", encoding="utf-8") as f:
@@ -173,6 +226,9 @@ class ToolHandler:
             "git",
             "npm",
             "node",
+            "pip",
+            "pip3",
+            "docker",
         }
         try:
             argv = shlex.split(command)
@@ -180,18 +236,38 @@ class ToolHandler:
             return f"ERROR: Invalid command: {error}"
         if not argv or argv[0] not in allowed:
             return f"ERROR: Command not allowed: {argv[0] if argv else '(empty)'}"
+        if argv[0] == "docker" and _docker_block_reason(argv):
+            return f"ERROR: {_docker_block_reason(argv)}"
+        sensitive_command = argv[0] in {"pip", "pip3", "npm", "node", "docker"} or (
+            argv[0] in {"python", "python3"}
+            and len(argv) > 2
+            and argv[1:3] == ["-m", "pip"]
+        )
+        if (
+            sensitive_command
+            and self.require_action_approval
+            and self._approved_action_fingerprint
+            != hashlib.sha256(f"run {command}".encode("utf-8")).hexdigest()
+        ):
+            if argv[0] in {"pip", "pip3"} or (
+                argv[0] == "npm" and len(argv) > 1 and argv[1] in {"install", "ci", "update"}
+            ) or (
+                argv[0] in {"python", "python3"}
+                and len(argv) > 3
+                and argv[1:4] == ["-m", "pip", "install"]
+            ):
+                return "ERROR: Package installation is not allowed without action approval"
+            return "ERROR: Sensitive command is not allowed without action approval"
         if argv[0] == "git":
             allowed_git_actions = {"status", "diff", "log", "show", "ls-files"}
             if len(argv) < 2 or argv[1] not in allowed_git_actions:
                 return f"ERROR: Git action not allowed: {argv[1] if len(argv) > 1 else '(empty)'}"
-        if (
-            argv[0] in {"pip", "pip3"}
-            or (argv[0] in {"python", "python3"} and len(argv) > 2 and argv[1:3] == ["-m", "pip"])
-            or (argv[0] == "npm" and len(argv) > 1 and argv[1] in {"install", "ci", "update"})
-        ):
-            return "ERROR: Package installation is not allowed during an autonomous task"
+        if argv[0] in {"pip", "pip3"} and (len(argv) < 2 or argv[1] != "install"):
+            return "ERROR: Package installation is not allowed except via pip install"
         if self.command_count >= self.max_commands:
             return f"ERROR: Task command limit reached ({self.max_commands})"
+        if sensitive_command and self._approved_action_fingerprint is not None:
+            self._approved_action_fingerprint = None
         self.command_count += 1
         result = run_bounded(
             argv,

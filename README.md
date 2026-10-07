@@ -13,7 +13,7 @@ O fluxo implantado usa:
 - Ollama local compativel com a API OpenAI;
 - um workspace separado do codigo do agente;
 - uma branch `bastiao/issue-N` por issue;
-- aprovacao humana antes da execucao;
+- aprovacao humana antes da execucao e, separadamente, antes de acoes sensiveis/publicacao;
 - Planner com caminhos permitidos e passos verificaveis;
 - testes, validacao de diff e Reviewer antes da publicacao;
 - estado e metricas persistentes fora do workspace;
@@ -35,10 +35,12 @@ toda pull request deve passar por revisao humana antes do merge.
 issue aberta e explicitamente aprovada
     |
     v
-branch bastiao/issue-N baseada em origin/main
+workspace local isolado e branch bastiao/issue-N
     |
     v
 SWE-agent (ler, pesquisar, escrever e executar testes)
+    |
+    +--> acao sensivel: pausa ate aprovacao especifica, temporaria e de uso unico
     |
     v
 pytest ou compileall + validacao semantica
@@ -49,11 +51,15 @@ Reviewer deterministico
     +--> rejeitado: comentario na issue, sem PR
     |
     v
-commit via GitHub API -> pull request -> comentario na issue
+aprovacao humana da publicacao (manifesto de arquivos/fingerprints)
+    |
+    v
+branch GitHub -> commit -> pull request -> comentario na issue
 ```
 
 O ciclo retorna `no_open_issues`, `pending_approval`, `failed`,
-`rejected_out_of_scope`, `rejected_unsafe_diff`, `rejected_by_reviewer` ou
+`rejected_out_of_scope`, `rejected_unsafe_diff`, `rejected_by_reviewer`,
+`pending_action_approval`, `action_denied`, `quality_gate_failed` ou
 `pull_request_opened`. Uma issue e processada por ciclo conforme
 `BASTIAO_MAX_ISSUES`.
 
@@ -80,6 +86,45 @@ O arquivo de aprovacao e `/var/lib/bastiao/approvals.json` e deve conter uma
 lista JSON de numeros de issues, por exemplo `[43]`. Com
 `BASTIAO_REQUIRE_APPROVAL=true`, issues fora dessa lista permanecem em
 `pending_approval`.
+
+## Aprovacao de acoes sensiveis
+
+A aprovacao da issue permite iniciar o trabalho, mas nao aprova automaticamente
+operacoes sensiveis nem a publicacao no GitHub. Escritas em arquivos de
+configuracao/dependencias e execucao de comandos JavaScript ou instalacao de
+pacotes pausam o ciclo e criam uma solicitacao persistente. Cada aprovacao fica
+vinculada a issue, a acao e ao fingerprint do conteudo/comando exato; e de uso
+unico e expira. Se o conteudo mudar, a aprovacao anterior nao vale. Publicar
+cria branch remota, commit e PR apenas depois de uma aprovacao separada do
+manifesto dos arquivos validados.
+
+Comandos privilegiados, destrutivos, de sistema, acesso fora do workspace,
+Podman, operacoes Docker mutaveis, alteracoes de Git e execucao Python
+arbitraria sao bloqueados, nao podem ser liberados por aprovacao. Inspecoes
+Docker somente leitura exigem aprovacao. Testes e compilacao Python limitados
+continuam automaticos. A auditoria JSONL registra contexto sanitizado, nunca o
+conteudo dos arquivos; valores em argumentos com nomes de credenciais e codigo
+inline de Node sao ocultados. Os arquivos de solicitacao e auditoria usam
+permissao `0600` em POSIX.
+
+No Docker Compose, revise as solicitacoes persistidas no volume `./state`:
+
+```bash
+docker compose --profile agent exec bastiao python -m src.action_approval list
+docker compose --profile agent exec bastiao python -m src.action_approval approve REQUEST_ID --approver "Seu nome"
+docker compose --profile agent exec bastiao python -m src.action_approval deny REQUEST_ID
+```
+
+Antes de aprovar `publish_changes`, revise o diff local e os resultados do
+Quality Gate/Reviewer. No host, use `git -C ./workspace diff origin/main`. O
+pedido mostra arquivos e fingerprints, nao copia o conteudo do patch para a
+auditoria.
+
+O estado padrao e `/var/lib/bastiao/action-approvals.json`; a auditoria fica
+em `/var/lib/bastiao/action-approval-audit.jsonl`. Solicitacoes expiram apos
+24 horas e aprovacoes apos 1 hora por padrao. Apos aprovar, um ciclo posterior
+retoma a tarefa; a aprovacao nao executa a acao por si mesma. Nao desative
+`BASTIAO_REQUIRE_ACTION_APPROVAL` em instalacoes operacionais.
 
 ## Execucao local
 
@@ -162,6 +207,11 @@ As variaveis documentadas em `.env.example` sao:
 | `BASTIAO_CONTAINER_PIDS_LIMIT` | nao | `256` | Maximo de processos/threads no container Bastiao |
 | `BASTIAO_REQUIRE_APPROVAL` | nao | `true` | Exige aprovacao no arquivo persistente antes da execucao |
 | `BASTIAO_APPROVAL_FILE` | nao | `/var/lib/bastiao/approvals.json` | Arquivo JSON com issues aprovadas |
+| `BASTIAO_REQUIRE_ACTION_APPROVAL` | nao | `true` | Exige aprovacao especifica, expirada e de uso unico para acoes sensiveis e publicacao |
+| `BASTIAO_ACTION_APPROVAL_FILE` | nao | `/var/lib/bastiao/action-approvals.json` | Solicitacoes e decisoes de aprovacao de acoes |
+| `BASTIAO_ACTION_AUDIT_FILE` | nao | `/var/lib/bastiao/action-approval-audit.jsonl` | Auditoria append-only das solicitacoes e decisoes |
+| `BASTIAO_APPROVAL_REQUEST_TTL_SECONDS` | nao | `86400` | Validade da solicitacao pendente |
+| `BASTIAO_ACTION_APPROVAL_TTL_SECONDS` | nao | `3600` | Validade da aprovacao antes do consumo |
 | `BASTIAO_STATE_DIR` | nao | `/var/lib/bastiao` | Diretorio de checkpoints e metricas |
 | `OMNIROUTE_URL` | nao | `http://127.0.0.1:11434/v1` | Base URL da API de chat |
 | `OMNIROUTE_API_KEY` | nao | vazio | Chave opcional para o endpoint |
@@ -194,8 +244,12 @@ menos que `BASTIAO_RETRY_ISSUES=true`.
 ## Seguranca e limites
 
 - Caminhos absolutos e caminhos que escapam do workspace sao rejeitados.
-- Comandos sao tokenizados sem `shell=True` e aceitam somente
-  `pytest`, `python`, `python3`, `git`, `npm` e `node`.
+- Comandos sao tokenizados sem `shell=True`; comandos destrutivos, privilegiados,
+  de sistema, Git mutavel, Docker mutavel/Podman, execucao Python arbitraria e leitura
+  de arquivos com nomes de credenciais sao bloqueados antes da execucao.
+-   Instalacoes de pacotes, comandos JavaScript, inspecoes Docker e alteracoes em
+  configuracao exigem aprovacao de acao especifica; a publicacao no GitHub exige
+  aprovacao separada, vinculada ao fingerprint de cada arquivo validado.
 - Arquivos `.env` e caminhos dentro de `.git` nao sao publicados.
 - O agente nao faz merge e nao deve usar credenciais de administrador.
 - Diffs que removem muito mais linhas do que adicionam sao rejeitados.

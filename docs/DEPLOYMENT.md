@@ -23,6 +23,11 @@ Mantenha a aprovacao humana habilitada:
 ```env
 BASTIAO_REQUIRE_APPROVAL=true
 BASTIAO_APPROVAL_FILE=/var/lib/bastiao/approvals.json
+BASTIAO_REQUIRE_ACTION_APPROVAL=true
+BASTIAO_ACTION_APPROVAL_FILE=/var/lib/bastiao/action-approvals.json
+BASTIAO_ACTION_AUDIT_FILE=/var/lib/bastiao/action-approval-audit.jsonl
+BASTIAO_APPROVAL_REQUEST_TTL_SECONDS=86400
+BASTIAO_ACTION_APPROVAL_TTL_SECONDS=3600
 BASTIAO_STATE_DIR=/var/lib/bastiao
 BASTIAO_TEMPERATURE=0.2
 ```
@@ -33,6 +38,21 @@ Antes de executar uma issue, escreva os numeros aprovados em
 ```json
 [43]
 ```
+
+Essa aprovacao autoriza somente o inicio do trabalho naquela issue. Acoes
+sensiveis e a publicacao no GitHub exigem aprovacao individual adicional. Para
+revisar solicitacoes pendentes no container:
+
+```bash
+docker compose --profile agent exec bastiao python -m src.action_approval list
+docker compose --profile agent exec bastiao python -m src.action_approval approve REQUEST_ID --approver "Seu nome"
+docker compose --profile agent exec bastiao python -m src.action_approval deny REQUEST_ID
+```
+
+Cada aprovacao e de uso unico, expira e corresponde ao fingerprint exato da
+acao/arquivos. Aprovar nao executa imediatamente: a tarefa retoma no proximo
+ciclo. Solicitacoes e auditoria persistem em `state/`; mantenha
+`BASTIAO_REQUIRE_ACTION_APPROVAL=true`.
 
 Baixe o modelo no Ollama:
 
@@ -62,6 +82,8 @@ Valide tambem os dados persistentes:
 
 ```bash
 cat state/approvals.json
+cat state/action-approvals.json
+tail -n 20 state/action-approval-audit.jsonl
 find state/tasks -maxdepth 1 -type f -print
 tail -n 20 state/metrics/cycles.jsonl
 ```

@@ -8,8 +8,10 @@ import requests
 import json
 import time
 import uuid
+import hashlib
 
 from .swe_agent import SWEAgent
+from .action_approval import ActionApprovalStore
 from .env import SandboxEnv
 from .github_client import GitHubClient
 from .model import OmniRouteModel
@@ -39,6 +41,7 @@ class AutonomousRunner:
         self.approval_file = Path(
             os.getenv("BASTIAO_APPROVAL_FILE", str(self.state_root / "approvals.json"))
         )
+        self.action_approval_store = ActionApprovalStore()
         self.metrics = CycleMetrics(str(self.state_root / "metrics"))
         self.reviewer = Reviewer()
         self.quality_gate_timeout = int(os.getenv("BASTIAO_QUALITY_GATE_TIMEOUT_SECONDS", "120"))
@@ -55,6 +58,33 @@ class AutonomousRunner:
         if not isinstance(approvals, list):
             raise ValueError("approval file must contain a JSON list of issue numbers")
         return issue_number in {int(value) for value in approvals}
+
+    def _authorize_publication(self, issue_number: int, branch: str, files: list[dict]) -> tuple[bool, dict | None]:
+        """Require a one-time human decision before creating remote GitHub objects."""
+        if os.getenv("BASTIAO_REQUIRE_ACTION_APPROVAL", "true").lower() != "true":
+            return True, None
+        manifest = [
+            {
+                "path": file["path"],
+                "sha256": hashlib.sha256(file["content"].encode("utf-8")).hexdigest(),
+            }
+            for file in files
+        ]
+        fingerprint = hashlib.sha256(
+            json.dumps(
+                {"issue": issue_number, "branch": branch, "files": manifest},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        store = getattr(self, "action_approval_store", None) or ActionApprovalStore()
+        self.action_approval_store = store
+        return store.authorize(
+            issue_number,
+            "publish_changes",
+            f"branch {branch}; files " + ", ".join(file["path"] for file in files),
+            fingerprint,
+        )
 
     def _git(self, *args: str) -> str:
         result = subprocess.run(
@@ -252,7 +282,6 @@ Steps:
                     "Bastiao rejected the task because the secure Planner produced no allowed paths.",
                 )
                 return {"issue": issue.number, "status": "rejected_no_scope", "files": 0}
-            self.client.create_branch(branch)
             state.start_step()
             state.save(self.state_dir)
 
@@ -268,6 +297,11 @@ Steps:
                 max_write_bytes=int(os.getenv("BASTIAO_MAX_WRITE_BYTES", "1000000")),
                 memory_limit_mb=int(os.getenv("BASTIAO_MEMORY_LIMIT_MB", "0")),
                 cpu_limit_seconds=int(os.getenv("BASTIAO_CPU_LIMIT_SECONDS", "0")),
+                issue_number=issue.number,
+                approval_store=self.action_approval_store,
+                require_action_approval=(
+                    os.getenv("BASTIAO_REQUIRE_ACTION_APPROVAL", "true").lower() == "true"
+                ),
             )
             agent = SWEAgent(
                 model=OmniRouteModel(),
@@ -288,6 +322,33 @@ Steps:
             finally:
                 env.cleanup()
             files = self._changed_files() if solved else []
+            approval_request = env.tools.last_approval_request
+            if approval_request and approval_request["status"] in {"pending", "denied"}:
+                state.fail(f"sensitive action {approval_request['status']}")
+                state.save(self.state_dir)
+                request_id = approval_request["request_id"]
+                if approval_request["status"] == "pending":
+                    self.client.add_comment(
+                        issue.number,
+                        "Bastiao paused before the sensitive action. Review the request with "
+                        "`python -m src.action_approval list` and approve it with "
+                        f"`python -m src.action_approval approve {request_id} --approver <name>`. "
+                        "The task can resume on a later cycle.",
+                    )
+                    return {
+                        "issue": issue.number,
+                        "status": "pending_action_approval",
+                        "request_id": request_id,
+                    }
+                self.client.add_comment(
+                    issue.number,
+                    f"Bastiao stopped because sensitive-action request {request_id} was denied.",
+                )
+                return {
+                    "issue": issue.number,
+                    "status": "action_denied",
+                    "request_id": request_id,
+                }
             if not solved or not files:
                 state.fail("agent did not produce a patch")
                 state.save(self.state_dir)
@@ -356,6 +417,39 @@ Steps:
                     "Bastiao rejected the generated patch because it replaced too much existing code.",
                 )
                 return {"issue": issue.number, "status": "rejected_unsafe_diff", "files": len(files)}
+            publish_allowed, publish_request = self._authorize_publication(
+                issue.number, branch, files
+            )
+            if not publish_allowed:
+                request_id = publish_request["request_id"]
+                status = publish_request["status"]
+                state.fail(f"publication {status}")
+                state.save(self.state_dir)
+                if status == "pending":
+                    self.client.add_comment(
+                        issue.number,
+                        "Bastiao completed local checks but did not create a remote branch, "
+                        "commit, or pull request. Review with "
+                        "`python -m src.action_approval list` and approve with "
+                        f"`python -m src.action_approval approve {request_id} --approver <name>`. "
+                        "Inspect the local patch with `git -C ./workspace diff origin/main` "
+                        "before approving. The task can resume on a later cycle.",
+                    )
+                    return {
+                        "issue": issue.number,
+                        "status": "pending_action_approval",
+                        "request_id": request_id,
+                    }
+                self.client.add_comment(
+                    issue.number,
+                    f"Bastiao did not publish because publication request {request_id} was denied.",
+                )
+                return {
+                    "issue": issue.number,
+                    "status": "action_denied",
+                    "request_id": request_id,
+                }
+            self.client.create_branch(branch)
             self.client.commit_files(
                 files,
                 f"feat: implement #{issue.number} {issue.title}",
