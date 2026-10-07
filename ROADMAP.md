@@ -33,15 +33,15 @@ Implementado: timeout por comando com encerramento de processos filhos, limite d
 
 A validacao encontrou uma lacuna: `communicate()` acumulava a saida completa do subprocesso antes de truncar a resposta. Em container descartavel com limite de 512 MiB, uma prova controlada capturou 32 MiB de stdout apesar do limite de caracteres da ferramenta. A busca de codigo tambem usava `subprocess.run(capture_output=True)` sem o ambiente sanitizado.
 
-A branch de correcao substitui essa captura por drenagem concorrente com limite em bytes por stream, continua drenando para evitar pipe bloqueado, sinaliza truncamento e encaminha a busca de codigo pelo executor sanitizado. Os testes locais passam, mas a imagem dessa branch ainda precisa ser validada no Docker antes de merge.
+A branch de correcao substituiu essa captura por drenagem concorrente com limite em bytes por stream, continuou drenando para evitar pipe bloqueado, sinaliza truncamento e encaminhou a busca de codigo pelo executor sanitizado. A imagem da branch foi validada em container descartavel Linux, incluindo saida de 32 MiB, rlimit de CPU/memoria e a suite completa. Nenhuma alteracao foi aplicada ao servico ativo.
 
-Ainda pendente para fechar #30: validar os limites no Linux/Docker e definir limites operacionais de memoria/CPU/processos/disco no Compose; o Compose atual nao define `mem_limit`, `cpus` ou `pids_limit`. Nao escolher valores de producao sem confirmar a capacidade e o perfil do servidor.
+Ainda pendente para fechar #30: definir e validar limites operacionais de memoria/CPU/processos/disco no Compose; o Compose atual nao define `mem_limit`, `cpus` ou `pids_limit`, e nao limita disco de temporarios/workspace. Nao escolher valores de producao sem confirmar a capacidade e o perfil do servidor.
 
 ### 4. Issue #37 ? Observabilidade operacional ? implementada, validacao/revisao pendentes
 
 A PR #49 entregou `cycle_id`, healthcheck read-only, retry/backoff limitado para leituras do GitHub, `status.json`, redaction, rotacao e testes de recuperacao/falha de dependencia. A suite e os healthchecks foram exercitados em clone/container descartavel.
 
-A issue permanece aberta ate revisao humana e confirmacao dos checks em Docker/runtime. Nao iniciar operacao continua ou modo 24/7 antes disso.
+A issue permanece aberta para revisao humana/merge e confirmacao operacional final. Nao iniciar operacao continua ou modo 24/7 antes disso.
 
 ## Proxima sequencia
 

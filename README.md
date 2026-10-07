@@ -1,4 +1,4 @@
-> **Checkpoint operacional (2026-10-07):** a PR #49 foi mergeada na `main` (commit `94e107b`), concluindo os incrementos funcionais da issue #37. As issues #30 e #37 continuam abertas enquanto a validacao Docker/runtime e a revisao humana nao forem concluidas. A implantacao existente nao foi alterada nesta retomada. Veja [`ROADMAP.md`](ROADMAP.md) e [`docs/SESSION-CHECKPOINT.md`](docs/SESSION-CHECKPOINT.md).
+> **Checkpoint operacional (2026-10-07):** a PR #49 foi mergeada na `main` (commit `94e107b`). Os incrementos #30/#37 passaram na validacao isolada de Docker; resta revisar/mergear a correcao e decidir os limites de recursos do Compose. A implantacao existente nao foi alterada. Veja [`ROADMAP.md`](ROADMAP.md) e [`docs/SESSION-CHECKPOINT.md`](docs/SESSION-CHECKPOINT.md).
 
 # Bastiao Autodidata
 

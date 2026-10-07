@@ -2,7 +2,7 @@
 
 ## Estado operacional em 2026-10-07
 
-A PR #49 foi mergeada na `main` (commit `94e107b`). As issues #30 e #37 ainda estao abertas enquanto os gates de validacao/revisao nao forem concluidos. A retomada foi conduzida em clone e containers descartaveis; a implantacao existente nao foi reiniciada nem atualizada. O checkout operacional tinha alteracoes locais e foi preservado sem limpeza ou reset.
+A PR #49 foi mergeada na `main` (commit `94e107b`). A branch `fix/bounded-subprocess-output` passou em suite completa e testes de stress em container descartavel; a PR de correcao ainda requer revisao/merge. As issues #30 e #37 permanecem abertas. A implantacao existente nao foi reiniciada nem atualizada, e o checkout operacional com alteracoes locais foi preservado sem limpeza ou reset.
 
 Antes de qualquer operacao, confirme o estado real com `docker compose --profile agent ps` e inspecione aprovacoes/checkpoints existentes. Nao reutilize uma aprovacao antiga: selecione a issue com o operador e substitua o arquivo de aprovacao somente depois de confirmacao explicita.
 
@@ -84,7 +84,7 @@ O agente executa pytest, compileall, lint/typecheck quando definidos e `git diff
 
 ## Limites do sandbox
 
-`BASTIAO_COMMAND_TIMEOUT_SECONDS` encerra comandos demorados e processos filhos (grupo de processos no POSIX, `taskkill /T` no Windows); `BASTIAO_MAX_COMMANDS` limita comandos; `BASTIAO_MAX_OUTPUT_CHARS` limita caracteres devolvidos; `BASTIAO_MAX_WRITE_BYTES` limita arquivos escritos. A captura de cada stream de comando usa um teto em bytes antes de acumular em memoria e drena o restante ate o processo terminar, evitando bloqueio de pipe. A busca de codigo usa o mesmo executor limitado e ambiente sem credenciais. O Quality Gate limita cada stream a 1.000.000 bytes.
+`BASTIAO_COMMAND_TIMEOUT_SECONDS` encerra comandos demorados e processos filhos (grupo de processos no POSIX, `taskkill /T` no Windows); `BASTIAO_MAX_COMMANDS` limita comandos; `BASTIAO_MAX_OUTPUT_CHARS` limita caracteres devolvidos; `BASTIAO_MAX_WRITE_BYTES` limita arquivos escritos. A captura de cada stream de comando usa um teto em bytes antes de acumular em memoria e drena o restante ate o processo terminar, evitando bloqueio de pipe. A busca de codigo usa o mesmo executor limitado e ambiente sem credenciais. O Quality Gate limita cada stream a 1.000.000 bytes. A branch de correcao foi testada em Linux/Docker com 512 MiB/1 CPU; uma reproducao de 32 MiB em stdout reteve 1.000.000 bytes e registrou truncamento. Suite completa Docker: 80 testes passaram; Pydantic foi instalado somente no container temporario para coleta dos testes.
 
 Comandos do modelo e o Quality Gate rodam com ambiente sem credenciais (`GITHUB_TOKEN`, `OMNIROUTE_API_KEY` e variaveis com `TOKEN/SECRET/PASSWORD/API_KEY` sao removidas). Cada tarefa usa um diretorio temporario proprio (`TMPDIR/TEMP/TMP`), removido ao fim da tarefa mesmo em falha. Em POSIX, `BASTIAO_MEMORY_LIMIT_MB` (`RLIMIT_AS`) e `BASTIAO_CPU_LIMIT_SECONDS` (`RLIMIT_CPU`) limitam cada comando; o padrao 0 desativa e os limites nao sao aplicados no Windows.
 
@@ -92,7 +92,7 @@ A issue #30 ainda nao esta concluida: o `docker-compose.yml` nao define `mem_lim
 
 ## Historico validado
 
-O teste controlado da issue #43 terminou com a PR #46 contendo somente `src/health_marker.py` com `HEALTH_MARKER = "ok"`. As PRs #45, #46, #47, #48 e #49 foram mergeadas manualmente. A PR #49 trouxe os incrementos de observabilidade listados acima. Consulte `ROADMAP.md` e `docs/SESSION-CHECKPOINT.md` para a posicao e as validacoes da retomada atual.
+O teste controlado da issue #43 terminou com a PR #46 contendo somente `src/health_marker.py` com `HEALTH_MARKER = "ok"`. As PRs #45, #46, #47, #48 e #49 foram mergeadas manualmente. A PR #49 trouxe os incrementos de observabilidade listados acima. A validacao atual usou apenas clone/imagem/container descartaveis e nao alterou o servico ativo. Consulte `ROADMAP.md` e `docs/SESSION-CHECKPOINT.md` para pendencias e evidencias.
 
 ## Chat do Open WebUI lendo o GitHub (somente leitura)
 
