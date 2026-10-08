@@ -20,6 +20,15 @@ def test_issue_scope_rejects_unrelated_file():
     )
 
 
+def test_issue_paths_extract_file_from_inline_command():
+    runner = AutonomousRunner.__new__(AutonomousRunner)
+
+    assert runner._issue_paths(
+        "Create hello.py script",
+        "File must be at `src/hello.py`. Test with: `python src/hello.py`",
+    ) == {"src/hello.py"}
+
+
 def test_issue_scope_accepts_explicit_target_file():
     runner = AutonomousRunner.__new__(AutonomousRunner)
     files = [{"path": "src/hello.py", "content": "print('Hello from Bastiao!')\n"}]
@@ -72,12 +81,39 @@ def test_issue_scope_rejects_unmentioned_existing_file(tmp_path):
     assert not runner._has_in_scope_diff("Create memory pipeline", "Add persistent memory.", files)
 
 
+def test_branch_for_closed_pull_request_uses_retry_branch():
+    runner = AutonomousRunner.__new__(AutonomousRunner)
+    runner.client = Mock()
+    runner.client.pull_request_state_for_branch.side_effect = ["closed", None]
+
+    assert runner._branch_for_issue(25, retry=True) == "bastiao/issue-25-retry-1"
+
+
+def test_branch_for_open_pull_request_is_not_duplicated():
+    runner = AutonomousRunner.__new__(AutonomousRunner)
+    runner.client = Mock()
+    runner.client.pull_request_state_for_branch.return_value = "open"
+
+    assert runner._branch_for_issue(25, retry=True) is None
+    runner.client.pull_request_state_for_branch.assert_called_once_with("bastiao/issue-25")
+
+
+def test_branch_for_closed_previous_attempt_resumes_on_next_branch():
+    runner = AutonomousRunner.__new__(AutonomousRunner)
+    runner.client = Mock()
+    runner.client.pull_request_state_for_branch.side_effect = ["closed", None]
+
+    assert runner._branch_for_issue(
+        25, retry=True, previous_branch="bastiao/issue-25"
+    ) == "bastiao/issue-25-retry-1"
+
+
 def test_github_client_branch_attempt_detection():
     from src.github_client import GitHubClient
 
     client = GitHubClient("owner", "repo", "token")
     client.session = Mock()
-    client.session.get.return_value.json.return_value = [{"number": 28}]
+    client.session.get.return_value.json.return_value = [{"number": 28, "state": "closed"}]
 
     assert client.has_pull_request_for_branch("bastiao/issue-25")
     client.session.get.assert_called_once()
@@ -347,7 +383,7 @@ def test_runner_publication_obeys_additional_approval_setting(
     runner.client.list_issues.return_value = [
         SimpleNamespace(number=29, title="Improve planner", body="Update `src/planner.py`")
     ]
-    runner.client.has_pull_request_for_branch.return_value = False
+    runner.client.pull_request_state_for_branch.return_value = None
     runner.workspace = tmp_path
     runner.state_root = tmp_path
     runner.state_dir = str(tmp_path / "tasks")

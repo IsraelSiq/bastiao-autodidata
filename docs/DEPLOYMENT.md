@@ -41,9 +41,11 @@ Antes de executar uma issue, escreva os numeros aprovados em
 
 Uma aprovacao explicita da issue autoriza o ciclo completo daquela issue,
 incluindo escritas no escopo do Planner, commits locais na branch dedicada e
-publicacao apos Quality Gate e Reviewer. Merge continua manual. Instalacao de
-dependencias, execucao JavaScript/Node arbitraria e inspecao Docker ainda exigem
-aprovacao individual. Configure `BASTIAO_REQUIRE_ACTION_APPROVAL=true` para exigir
+publicacao apos Quality Gate e Reviewer. Merge continua manual. Com
+`BASTIAO_RETRY_ISSUES=true`, uma issue com PR fechado usa uma nova branch de
+retry; PRs abertos nunca sao duplicados. Instalacao de dependencias, execucao
+JavaScript/Node arbitraria e inspecao Docker ainda exigem aprovacao individual.
+Configure `BASTIAO_REQUIRE_ACTION_APPROVAL=true` para exigir
 aprovacao adicional tambem para outras acoes sensiveis e para a publicacao.
 Scripts padrao allowlisted de teste e qualidade (`npm test`, `npm run test`,
 `test:unit`, `test:vitest`, `lint`, `typecheck` e `check`) nao pedem aprovacao

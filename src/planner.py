@@ -10,6 +10,30 @@ import re
 from .github_client import GitHubIssue
 
 
+_REPOSITORY_PATH_RE = re.compile(
+    r"(?<![A-Za-z0-9_/-])(?:\./)?(?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+"
+)
+
+
+def extract_repository_paths(text: str) -> list[str]:
+    """Extract explicit relative file paths from prose and command examples."""
+    text = re.sub(r"https?://\S+", "", text.replace("\\", "/"))
+    paths = set()
+    for match in _REPOSITORY_PATH_RE.finditer(text):
+        path = match.group(0).rstrip(".,;:!?)]}")
+        while path.startswith("./"):
+            path = path[2:]
+        if (
+            not path
+            or path.startswith("/")
+            or re.match(r"^[A-Za-z]:/", path)
+            or any(part in {".", ".."} for part in path.split("/"))
+        ):
+            continue
+        paths.add(path)
+    return sorted(paths)
+
+
 @dataclass
 class Task:
     """Task de implementacao."""
@@ -60,7 +84,9 @@ class IssuePlan:
             issue_number=int(data["issue_number"]),
             title=data["title"],
             acceptance_criteria=list(data.get("acceptance_criteria", [])),
-            allowed_paths=list(data.get("allowed_paths", [])),
+            allowed_paths=extract_repository_paths(
+                "\n".join(str(path) for path in data.get("allowed_paths", []))
+            ),
             steps=[PlanStep(**step) for step in data.get("steps", [])],
         )
 
@@ -80,22 +106,7 @@ class Planner:
             for line in text.splitlines()
             if line.strip().startswith(("- [ ]", "- [x]", "- [X]"))
         ]
-        candidates = set(re.findall(r"`([^`]+)`", text))
-        candidates.update(
-            re.findall(
-                r"\b(?:src|tests|scripts|docs|utils|open-sse)(?:/[A-Za-z0-9_.-]+)+",
-                text,
-            )
-        )
-        paths = sorted(
-            {
-                value.replace("\\", "/").lstrip("./")
-                for value in candidates
-                if "/" in value
-                and not value.startswith(("http://", "https://"))
-                and not value.endswith("/")
-            }
-        )
+        paths = extract_repository_paths(text)
         steps = [
             PlanStep("inspect", "Inspecionar o repositorio", "read relevant files"),
             PlanStep("implement", "Implementar a mudanca", "write only allowed files"),

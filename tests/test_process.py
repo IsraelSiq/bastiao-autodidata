@@ -13,12 +13,16 @@ from src.tools import ToolHandler
 def test_sanitized_env_removes_credentials(monkeypatch):
     monkeypatch.setenv("GITHUB_TOKEN", "secret-value-123")
     monkeypatch.setenv("CUSTOM_API_KEY", "another-secret")
+    monkeypatch.setenv("BASTIAO_ISSUE_NUMBERS", "25")
+    monkeypatch.setenv("BASTIAO_REQUIRE_APPROVAL", "true")
     monkeypatch.setenv("HARMLESS", "yes")
 
     env = sanitized_env({"TMPDIR": "/x"})
 
     assert "GITHUB_TOKEN" not in env
     assert "CUSTOM_API_KEY" not in env
+    assert "BASTIAO_ISSUE_NUMBERS" not in env
+    assert "BASTIAO_REQUIRE_APPROVAL" not in env
     assert env["HARMLESS"] == "yes"
     assert env["TMPDIR"] == "/x"
 

@@ -28,6 +28,7 @@ def sanitized_env(extra: Optional[dict] = None) -> dict:
         key: value
         for key, value in os.environ.items()
         if key not in SECRET_ENV_NAMES
+        and not key.upper().startswith("BASTIAO_")
         and not any(marker in key.upper() for marker in SECRET_ENV_MARKERS)
     }
     env.update(extra or {})
