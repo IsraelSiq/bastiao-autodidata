@@ -254,6 +254,46 @@ Steps:
         self.metrics.record(summary, time.monotonic() - started)
         return summary
 
+    def _solve(self, issue, plan, state, branch, feedback: str = ""):
+        env = SandboxEnv(
+            str(self.workspace),
+            allowed_paths=plan.allowed_paths,
+            strict_scope=True,
+            command_timeout_seconds=int(
+                os.getenv("BASTIAO_COMMAND_TIMEOUT_SECONDS", "60")
+            ),
+            max_output_chars=int(os.getenv("BASTIAO_MAX_OUTPUT_CHARS", "10000")),
+            max_commands=int(os.getenv("BASTIAO_MAX_COMMANDS", "100")),
+            max_write_bytes=int(os.getenv("BASTIAO_MAX_WRITE_BYTES", "1000000")),
+            memory_limit_mb=int(os.getenv("BASTIAO_MEMORY_LIMIT_MB", "0")),
+            cpu_limit_seconds=int(os.getenv("BASTIAO_CPU_LIMIT_SECONDS", "0")),
+            issue_number=issue.number,
+            approval_store=self.action_approval_store,
+            require_action_approval=(
+                os.getenv("BASTIAO_REQUIRE_ACTION_APPROVAL", "false").lower() == "true"
+            ),
+            expected_branch=branch,
+        )
+        agent = SWEAgent(
+            model=OmniRouteModel(),
+            env=env,
+            max_iterations=self.max_iterations,
+        )
+        try:
+            solved = agent.solve(
+                issue.title,
+                issue.body or "",
+                plan=(
+                    self._format_plan(plan) + feedback
+                    + f"\n\nResume checkpoint: step {state.current_step}, "
+                    f"attempt {state.attempts}. Last result: {state.result or 'none'}. "
+                    f"Previous error: {state.error or 'none'}."
+                ),
+            )
+        finally:
+            env.cleanup()
+        return solved, env
+
     def _run_once(self) -> dict:
         try:
             issues = self._with_retry(lambda: self.client.list_issues(state="open"))
@@ -320,43 +360,7 @@ Steps:
             state.start_step()
             state.save(self.state_dir)
 
-            env = SandboxEnv(
-                str(self.workspace),
-                allowed_paths=plan.allowed_paths,
-                strict_scope=True,
-                command_timeout_seconds=int(
-                    os.getenv("BASTIAO_COMMAND_TIMEOUT_SECONDS", "60")
-                ),
-                max_output_chars=int(os.getenv("BASTIAO_MAX_OUTPUT_CHARS", "10000")),
-                max_commands=int(os.getenv("BASTIAO_MAX_COMMANDS", "100")),
-                max_write_bytes=int(os.getenv("BASTIAO_MAX_WRITE_BYTES", "1000000")),
-                memory_limit_mb=int(os.getenv("BASTIAO_MEMORY_LIMIT_MB", "0")),
-                cpu_limit_seconds=int(os.getenv("BASTIAO_CPU_LIMIT_SECONDS", "0")),
-                issue_number=issue.number,
-                approval_store=self.action_approval_store,
-                require_action_approval=(
-                    os.getenv("BASTIAO_REQUIRE_ACTION_APPROVAL", "false").lower() == "true"
-                ),
-                expected_branch=branch,
-            )
-            agent = SWEAgent(
-                model=OmniRouteModel(),
-                env=env,
-                max_iterations=self.max_iterations,
-            )
-            try:
-                solved = agent.solve(
-                    issue.title,
-                    issue.body or "",
-                    plan=(
-                        self._format_plan(plan)
-                        + f"\n\nResume checkpoint: step {state.current_step}, "
-                        f"attempt {state.attempts}. Last result: {state.result or 'none'}. "
-                        f"Previous error: {state.error or 'none'}."
-                    ),
-                )
-            finally:
-                env.cleanup()
+            solved, env = self._solve(issue, plan, state, branch)
             files = self._changed_files() if solved else []
             approval_request = env.tools.last_approval_request
             if approval_request and approval_request["status"] in {"pending", "denied"}:
@@ -403,6 +407,19 @@ Steps:
                 return {"issue": issue.number, "status": "rejected_out_of_scope", "files": len(files)}
 
             quality_gate = self._run_quality_gate()
+            fix_rounds = int(os.getenv("BASTIAO_MAX_FIX_ROUNDS", "2"))
+            while not quality_gate["passed"] and fix_rounds > 0:
+                fix_rounds -= 1
+                failed_checks = [c for c in quality_gate["checks"] if not c["passed"]]
+                feedback = (
+                    "\n\nThe quality gate failed. Fix only these problems, staying in scope: "
+                    + "; ".join(
+                        f"{c['name']}: {str(c.get('output', ''))[:500]}" for c in failed_checks
+                    )
+                )
+                self._solve(issue, plan, state, branch, feedback)
+                files = self._changed_files()
+                quality_gate = self._run_quality_gate()
             if not quality_gate["passed"]:
                 reason = "quality gate failed"
                 failed = [
