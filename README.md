@@ -115,6 +115,9 @@ de escopo/diff e Reviewer.
 Comandos privilegiados, destrutivos, de sistema, acesso fora do workspace,
 Podman, operacoes Docker mutaveis, push, merge, troca/criacao de branch,
 alteracoes de Git fora do escopo e execucao Python arbitraria sao bloqueados.
+Scripts Python individuais so podem rodar sem argumentos quando o caminho existe
+e foi explicitamente incluido no escopo do Planner; `python -c` e outros comandos
+Python arbitrarios continuam bloqueados.
 `git add` e `git commit -m` locais so sao permitidos na branch esperada e para
 arquivos explicitamente autorizados pelo Planner; hooks Git sao desativados
 nesses comandos. Testes e compilacao Python limitados continuam automaticos.
@@ -263,7 +266,8 @@ menos que `BASTIAO_RETRY_ISSUES=true`.
 - Caminhos absolutos e caminhos que escapam do workspace sao rejeitados.
 - Comandos sao tokenizados sem `shell=True`; comandos destrutivos, privilegiados,
   de sistema, Git remoto/destrutivo, Docker mutavel/Podman, execucao Python arbitraria e leitura
-  de arquivos com nomes de credenciais sao bloqueados antes da execucao.
+  de arquivos com nomes de credenciais sao bloqueados antes da execucao. Scripts Python
+  individuais sem argumentos so sao aceitos quando existem e estao no escopo do Planner.
 - A autorizacao da issue cobre alteracoes nos caminhos planejados, commits
   locais na branch dedicada e publicacao apos os gates. Instalacoes, comandos
   JavaScript/Node arbitrario e inspecoes Docker continuam exigindo aprovacao

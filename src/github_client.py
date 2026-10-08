@@ -300,15 +300,20 @@ class GitHubClient:
         response.raise_for_status()
         return response.json()["html_url"]
 
-    def has_pull_request_for_branch(self, branch: str) -> bool:
-        """Return whether GitHub already has an open or closed PR for a branch."""
+    def pull_request_state_for_branch(self, branch: str) -> str | None:
+        """Return the state of an existing PR for a branch, if any."""
         response = self.session.get(
             f"{self.base_url}/repos/{self.owner}/{self.repo}/pulls",
             params={"state": "all", "head": f"{self.owner}:{branch}", "per_page": 1},
             timeout=self.timeout,
         )
         response.raise_for_status()
-        return bool(response.json())
+        pull_requests = response.json()
+        return pull_requests[0].get("state") if pull_requests else None
+
+    def has_pull_request_for_branch(self, branch: str) -> bool:
+        """Return whether GitHub already has an open or closed PR for a branch."""
+        return self.pull_request_state_for_branch(branch) is not None
 
 
 if __name__ == "__main__":

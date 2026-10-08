@@ -113,7 +113,9 @@ def _references_external_path(arguments: list[str], repo_root: Path) -> bool:
     return False
 
 
-def classify_action(action: str, repo_path: str | Path) -> tuple[ActionClass, str, str]:
+def classify_action(
+    action: str, repo_path: str | Path, allowed_paths: set[str] | None = None
+) -> tuple[ActionClass, str, str]:
     """Classify a tool request and return its class, safe context, and fingerprint."""
     fingerprint = hashlib.sha256(action.encode("utf-8")).hexdigest()
     parts = action.strip().split(maxsplit=1)
@@ -230,7 +232,40 @@ def classify_action(action: str, repo_path: str | Path) -> tuple[ActionClass, st
             if _references_external_path(argv[3:], repo_root):
                 return ActionClass.BLOCKED, "command path escapes workspace", fingerprint
             return ActionClass.AUTOMATIC, f"verification command {argv[1]} {argv[2]}", fingerprint
-        return ActionClass.BLOCKED, "Python execution is limited to test and compile commands", fingerprint
+        if len(argv) == 2 and Path(argv[1]).suffix.lower() == ".py":
+            candidate = Path(argv[1])
+            if candidate.is_absolute() or ".." in candidate.parts:
+                return ActionClass.BLOCKED, "Python script path escapes workspace", fingerprint
+            resolved = (repo_root / candidate).resolve()
+            if resolved == repo_root or repo_root not in resolved.parents:
+                return ActionClass.BLOCKED, "Python script path escapes workspace", fingerprint
+            normalized = resolved.relative_to(repo_root).as_posix()
+            if _is_sensitive_path(Path(normalized)) or not resolved.is_file():
+                return (
+                    ActionClass.BLOCKED,
+                    "Python script is not a safe workspace file",
+                    fingerprint,
+                )
+            planned_paths = {
+                value.replace("\\", "/").removeprefix("./")
+                for value in (allowed_paths or set())
+            }
+            if normalized not in planned_paths:
+                return (
+                    ActionClass.BLOCKED,
+                    "Python script is outside the planner scope",
+                    fingerprint,
+                )
+            return (
+                ActionClass.AUTOMATIC,
+                f"scoped Python validation script {normalized}",
+                fingerprint,
+            )
+        return (
+            ActionClass.BLOCKED,
+            "Python execution is limited to test, compile, and scoped scripts",
+            fingerprint,
+        )
     if executable in {"pytest", "git"}:
         if _references_external_path(argv[1:], repo_root):
             return ActionClass.BLOCKED, "command path escapes workspace", fingerprint

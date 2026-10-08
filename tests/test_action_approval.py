@@ -34,6 +34,23 @@ def test_classifies_sensitive_and_blocked_actions(tmp_path: Path):
     assert "package" in context
 
 
+def test_python_script_execution_requires_an_existing_planned_file(tmp_path: Path):
+    script = tmp_path / "src" / "hello.py"
+    script.parent.mkdir()
+    script.write_text("print('hello')\n", encoding="utf-8")
+
+    assert classify_action(
+        "run python src/hello.py", tmp_path, {"src/hello.py"}
+    )[0] is ActionClass.AUTOMATIC
+    assert classify_action("run python src/hello.py", tmp_path)[0] is ActionClass.BLOCKED
+    assert classify_action(
+        "run python src/hello.py extra", tmp_path, {"src/hello.py"}
+    )[0] is ActionClass.BLOCKED
+    assert classify_action(
+        "run python -c 'print(1)'", tmp_path, {"src/hello.py"}
+    )[0] is ActionClass.BLOCKED
+
+
 @pytest.mark.parametrize(
     "action",
     [

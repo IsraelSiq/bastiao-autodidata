@@ -105,7 +105,9 @@ class ToolHandler:
 
         command = parts[0]
         args = parts[1] if len(parts) > 1 else ""
-        action_class, target, fingerprint = classify_action(action, self.repo_path)
+        action_class, target, fingerprint = classify_action(
+            action, self.repo_path, self.allowed_paths
+        )
         if action_class is ActionClass.BLOCKED:
             return f"ERROR: Action blocked: {target}"
         requires_specific_approval = (
@@ -252,6 +254,16 @@ class ToolHandler:
             return f"ERROR: Invalid command: {error}"
         if not argv or argv[0] not in allowed:
             return f"ERROR: Command not allowed: {argv[0] if argv else '(empty)'}"
+        if (
+            argv[0] in {"python", "python3"}
+            and len(argv) == 2
+            and Path(argv[1]).suffix.lower() == ".py"
+        ):
+            action_class, reason, _ = classify_action(
+                f"run {shlex.join(argv)}", self.repo_path, self.allowed_paths
+            )
+            if action_class is ActionClass.BLOCKED:
+                return f"ERROR: Action blocked: {reason}"
         if argv[0] == "docker" and _docker_block_reason(argv):
             return f"ERROR: {_docker_block_reason(argv)}"
         sensitive_command = argv[0] in {"pip", "pip3", "npm", "node", "docker"} or (

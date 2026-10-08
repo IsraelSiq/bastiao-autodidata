@@ -1,7 +1,6 @@
 """Guarded autonomous issue-to-PR runner."""
 
 import os
-import re
 import subprocess
 from pathlib import Path
 import requests
@@ -15,7 +14,7 @@ from .action_approval import ActionApprovalStore
 from .env import SandboxEnv
 from .github_client import GitHubClient
 from .model import OmniRouteModel
-from .planner import IssuePlan, Planner
+from .planner import IssuePlan, Planner, extract_repository_paths
 from .task_state import create_task_state
 from .task_state import TaskExecutionState
 from .metrics import CycleMetrics
@@ -174,24 +173,7 @@ Steps:
 
     def _issue_paths(self, title: str, body: str) -> set[str]:
         """Extract explicit repository paths from an issue for scope validation."""
-        text = f"{title}\n{body}"
-        candidates = set(re.findall(r"`([^`]+)`", text))
-        candidates.update(
-            re.findall(
-                r"\b(?:src|tests|scripts|docs|utils|open-sse)(?:/[A-Za-z0-9_.-]+)+",
-                text,
-            )
-        )
-        paths = set()
-        for candidate in candidates:
-            normalized = candidate.strip().replace("\\", "/").lstrip("./")
-            if (
-                "/" in normalized
-                and not normalized.startswith(("http://", "https://"))
-                and not normalized.endswith("/")
-            ):
-                paths.add(normalized)
-        return paths
+        return set(extract_repository_paths(f"{title}\n{body}"))
 
     def _has_in_scope_diff(self, title: str, body: str, files: list[dict]) -> bool:
         """Reject patches that do not touch the issue's explicit target files."""
@@ -231,12 +213,86 @@ Steps:
             base_delay=float(os.getenv("BASTIAO_GITHUB_RETRY_BASE_SECONDS", "1")),
         )
 
+    def _branch_for_issue(
+        self, issue_number: int, retry: bool, previous_branch: str | None = None
+    ) -> str | None:
+        base_branch = f"bastiao/issue-{issue_number}"
+        retry_prefix = f"{base_branch}-retry-"
+        start_suffix = 0
+
+        if previous_branch:
+            previous_state = self._with_retry(
+                lambda: self.client.pull_request_state_for_branch(previous_branch)
+            )
+            if previous_state is None:
+                return previous_branch
+            if previous_state == "open" or not retry:
+                return None
+            if previous_state != "closed":
+                raise ValueError(f"unexpected pull request state: {previous_state}")
+            previous_suffix = previous_branch.removeprefix(retry_prefix)
+            start_suffix = int(previous_suffix) + 1 if previous_suffix.isdigit() else 1
+
+        for suffix in range(start_suffix, start_suffix + 100):
+            branch = base_branch if suffix == 0 else f"{retry_prefix}{suffix}"
+            pull_request_state = self._with_retry(
+                lambda branch=branch: self.client.pull_request_state_for_branch(branch)
+            )
+            if pull_request_state is None:
+                return branch
+            if pull_request_state == "open" or not retry:
+                return None
+            if pull_request_state != "closed":
+                raise ValueError(f"unexpected pull request state: {pull_request_state}")
+
+        raise RuntimeError(f"no unused retry branch found for issue {issue_number}")
+
     def run_once(self) -> dict:
         started = time.monotonic()
         result = self._run_once()
         summary = {"cycle_id": str(uuid.uuid4()), **result}
         self.metrics.record(summary, time.monotonic() - started)
         return summary
+
+    def _solve(self, issue, plan, state, branch, feedback: str = ""):
+        env = SandboxEnv(
+            str(self.workspace),
+            allowed_paths=plan.allowed_paths,
+            strict_scope=True,
+            command_timeout_seconds=int(
+                os.getenv("BASTIAO_COMMAND_TIMEOUT_SECONDS", "60")
+            ),
+            max_output_chars=int(os.getenv("BASTIAO_MAX_OUTPUT_CHARS", "10000")),
+            max_commands=int(os.getenv("BASTIAO_MAX_COMMANDS", "100")),
+            max_write_bytes=int(os.getenv("BASTIAO_MAX_WRITE_BYTES", "1000000")),
+            memory_limit_mb=int(os.getenv("BASTIAO_MEMORY_LIMIT_MB", "0")),
+            cpu_limit_seconds=int(os.getenv("BASTIAO_CPU_LIMIT_SECONDS", "0")),
+            issue_number=issue.number,
+            approval_store=self.action_approval_store,
+            require_action_approval=(
+                os.getenv("BASTIAO_REQUIRE_ACTION_APPROVAL", "false").lower() == "true"
+            ),
+            expected_branch=branch,
+        )
+        agent = SWEAgent(
+            model=OmniRouteModel(),
+            env=env,
+            max_iterations=self.max_iterations,
+        )
+        try:
+            solved = agent.solve(
+                issue.title,
+                issue.body or "",
+                plan=(
+                    self._format_plan(plan) + feedback
+                    + f"\n\nResume checkpoint: step {state.current_step}, "
+                    f"attempt {state.attempts}. Last result: {state.result or 'none'}. "
+                    f"Previous error: {state.error or 'none'}."
+                ),
+            )
+        finally:
+            env.cleanup()
+        return solved, env
 
     def _run_once(self) -> dict:
         try:
@@ -257,20 +313,24 @@ Steps:
         for issue in issues:
             if selected_numbers and issue.number not in selected_numbers:
                 continue
-            branch = f"bastiao/issue-{issue.number}"
-            if not retry:
-                try:
-                    if self._with_retry(
-                        lambda: self.client.has_pull_request_for_branch(branch)
-                    ):
-                        skipped.add(issue.number)
-                        continue
-                except requests.RequestException as error:
-                    return {
-                        "issue": issue.number,
-                        "status": "github_unavailable",
-                        "error": f"{type(error).__name__}: {error}",
-                    }
+            state_path = self.state_root / "tasks" / f"issue-{issue.number}.json"
+            state = TaskExecutionState.load(str(state_path)) if state_path.exists() else None
+            resume_branch = (
+                state.branch
+                if state and state.status in {"failed", "running"}
+                else None
+            )
+            try:
+                branch = self._branch_for_issue(issue.number, retry, resume_branch)
+            except requests.RequestException as error:
+                return {
+                    "issue": issue.number,
+                    "status": "github_unavailable",
+                    "error": f"{type(error).__name__}: {error}",
+                }
+            if branch is None:
+                skipped.add(issue.number)
+                continue
             if processed >= int(os.getenv("BASTIAO_MAX_ISSUES", "1")):
                 break
             if not self._is_approved(issue.number):
@@ -278,16 +338,12 @@ Steps:
                 return {"issue": issue.number, "status": "pending_approval"}
             processed += 1
             self._git("fetch", "origin", "main")
-            state_path = self.state_root / "tasks" / f"issue-{issue.number}.json"
-            state = None
-            if state_path.exists():
-                state = TaskExecutionState.load(str(state_path))
             if state and state.status in {"failed", "running"} and state.branch == branch:
                 self._git("checkout", branch)
                 plan = IssuePlan.from_dict(state.plan)
             else:
                 self._git("checkout", "-B", branch, "origin/main")
-                plan = self.planner.build_issue_plan(issue)
+                plan = self.planner.build_issue_plan(issue, self.workspace)
                 state = create_task_state(plan)
                 state.branch = branch
             if state is None:
@@ -304,43 +360,7 @@ Steps:
             state.start_step()
             state.save(self.state_dir)
 
-            env = SandboxEnv(
-                str(self.workspace),
-                allowed_paths=plan.allowed_paths,
-                strict_scope=True,
-                command_timeout_seconds=int(
-                    os.getenv("BASTIAO_COMMAND_TIMEOUT_SECONDS", "60")
-                ),
-                max_output_chars=int(os.getenv("BASTIAO_MAX_OUTPUT_CHARS", "10000")),
-                max_commands=int(os.getenv("BASTIAO_MAX_COMMANDS", "100")),
-                max_write_bytes=int(os.getenv("BASTIAO_MAX_WRITE_BYTES", "1000000")),
-                memory_limit_mb=int(os.getenv("BASTIAO_MEMORY_LIMIT_MB", "0")),
-                cpu_limit_seconds=int(os.getenv("BASTIAO_CPU_LIMIT_SECONDS", "0")),
-                issue_number=issue.number,
-                approval_store=self.action_approval_store,
-                require_action_approval=(
-                    os.getenv("BASTIAO_REQUIRE_ACTION_APPROVAL", "false").lower() == "true"
-                ),
-                expected_branch=branch,
-            )
-            agent = SWEAgent(
-                model=OmniRouteModel(),
-                env=env,
-                max_iterations=self.max_iterations,
-            )
-            try:
-                solved = agent.solve(
-                    issue.title,
-                    issue.body or "",
-                    plan=(
-                        self._format_plan(plan)
-                        + f"\n\nResume checkpoint: step {state.current_step}, "
-                        f"attempt {state.attempts}. Last result: {state.result or 'none'}. "
-                        f"Previous error: {state.error or 'none'}."
-                    ),
-                )
-            finally:
-                env.cleanup()
+            solved, env = self._solve(issue, plan, state, branch)
             files = self._changed_files() if solved else []
             approval_request = env.tools.last_approval_request
             if approval_request and approval_request["status"] in {"pending", "denied"}:
@@ -387,6 +407,19 @@ Steps:
                 return {"issue": issue.number, "status": "rejected_out_of_scope", "files": len(files)}
 
             quality_gate = self._run_quality_gate()
+            fix_rounds = int(os.getenv("BASTIAO_MAX_FIX_ROUNDS", "2"))
+            while not quality_gate["passed"] and fix_rounds > 0:
+                fix_rounds -= 1
+                failed_checks = [c for c in quality_gate["checks"] if not c["passed"]]
+                feedback = (
+                    "\n\nThe quality gate failed. Fix only these problems, staying in scope: "
+                    + "; ".join(
+                        f"{c['name']}: {str(c.get('output', ''))[:500]}" for c in failed_checks
+                    )
+                )
+                self._solve(issue, plan, state, branch, feedback)
+                files = self._changed_files()
+                quality_gate = self._run_quality_gate()
             if not quality_gate["passed"]:
                 reason = "quality gate failed"
                 failed = [

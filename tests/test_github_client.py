@@ -26,3 +26,11 @@ def test_has_pull_request_passes_timeout():
         params={"state": "all", "head": "owner:bastiao/issue-1", "per_page": 1},
         timeout=20.0,
     )
+
+
+def test_pull_request_state_for_branch_returns_state():
+    client = GitHubClient("owner", "repo", "token")
+    client.session = Mock()
+    client.session.get.return_value.json.return_value = [{"state": "closed"}]
+
+    assert client.pull_request_state_for_branch("bastiao/issue-1") == "closed"

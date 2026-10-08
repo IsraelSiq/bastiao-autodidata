@@ -1,71 +1,71 @@
 # Roadmap do Bastiao Autodidata
 
-Este documento registra a ordem de evolucao recomendada, o estado verificado do protocolo e o ponto seguro de retomada.
+Atualizado em 2026-10-08. Estado verificado no servidor (`bastiao-autodidata:e754e0b`, 122 testes passando).
 
-## Estado verificado em 2026-10-07
+## Onde estamos
 
-A `main` inclui a PR #51 (merge commit `724c6a9`), baseada no commit `95f1f87` da PR #50. A PR #51 aplica limites configuraveis no container e por subprocesso, com testes em Windows e Docker/Linux descartavel. Nenhuma dessas alteracoes foi aplicada ao servico ativo.
+**Fase 2 (autonomia supervisionada) — ~70% concluida. Autodidatismo (Fases 3 e 4) ainda nao iniciado.**
 
-Nao ha PR aberta no momento. Issues abertas apos a triagem: #22, #23, #24, #25, #29, #30, #31, #33, #34, #35, #36, #37 e #38.
+Estimativa geral ate o "Bastiao autodidata": **~45%**. A infraestrutura de seguranca e o runner issue → PR estao prontos; o que falta e a inteligencia (planejamento melhor, router de modelos), a memoria e o ciclo de aprendizado.
 
-Issues encerradas nesta triagem: #43 como concluida (PR #46 mergeada); #6 como duplicada/supersedida pela #36; #10 e #11 como incorporadas a #38; #21 como meta de planejamento substituida pelo roadmap #31. O encerramento das issues #6, #10 e #11 nao declara suas funcionalidades implementadas.
+| Fase | Tema | Status | Evidencia |
+| ---- | ---- | ------ | --------- |
+| 0 | Implantacao, WebUI, acesso remoto | Concluida | Servico em Docker, WebUI na porta 3000 |
+| 0.5 | Sandbox e seguranca (#30, #29) | ~90% | Limites de memoria/CPU/PIDs/tmp, aprovacao por issue e por acao, redaction. Falta quota de `workspace/` |
+| 1 | Qualidade (#33 Reviewer, #34 Quality Gate) | ~70% | Gate e revisao deterministica ativos; falta loop de correcao limitado |
+| 2 | Autonomia issue → branch → teste → PR (#25, #36) | ~70% | PR #54 gerada de ponta a ponta; falhas de escopo/branch corrigidas (PR #55). Falta provar em varias issues e router/fallback de providers |
+| 3 | Memoria persistente (#35) | 0% | Nao iniciada |
+| 4 | Pipeline autodidata: pesquisar, estudar, avaliar (#38) | ~5% | Apenas `study_plan.py` |
+| 5 | Observabilidade 24/7 (#37) | ~50% | status.json, metricas, healthchecks; falta recuperacao apos reinicio validada |
 
-## O que ja foi validado
+SWE-agent (#22), OpenHands (#23) e modelo hibrido (#24) seguem adiados.
 
-- PRs #49, #50 e #51 mergeadas na `main`.
-- A PR #50 limita a captura de stdout/stderr antes de reter os bytes e usa o executor sanitizado para busca de codigo.
-- A PR #51 limita o container Bastiao a 4 GiB, 2 CPUs e 256 PIDs, e define `/tmp` tmpfs de 512 MiB. Subprocessos POSIX recebem limites configuraveis de 2048 MiB de espaco de enderecamento e 45 segundos de CPU.
-- Testes da PR #51: suite Windows 82 passed, 2 skipped; suite Linux/Docker descartavel 84 passed; `compileall`, `git diff --check` e configuracao do Compose passaram. Medicoes no container descartavel confirmaram os limites cgroup e tmpfs.
-- PR #49 entregou cycle_id, healthchecks read-only, retry limitado para leituras GitHub, `status.json`, redaction e rotacao de metricas.
-- Nenhum ciclo foi iniciado para esta triagem. O container e o workspace ativos nao foram reiniciados, reconstruidos nem modificados.
+## Definicao de "Bastiao autodidata" (criterio de pronto)
 
-## Ponto atual e criterio por issue
+1. Pega issues sozinho, implementa em branch propria, testa e abre PR; merge continua humano.
+2. Taxa de sucesso medida em pelo menos 10 issues reais consecutivas (PR com testes verdes, sem retrabalho manual em >=60%).
+3. Registra licoes de cada tentativa (erro, causa, correcao) em memoria persistente e as consulta antes de planejar.
+4. Estuda fontes permitidas, gera plano de estudo e avalia o proprio desempenho de forma reproduzivel.
+5. Opera continuamente com limites, observabilidade e recuperacao apos reinicio.
 
-### Seguranca e execucao
+## Proximos marcos
 
-- **#29 — aprovacoes humanas: implementacao nesta branch, revisao/merge pendentes.** A aprovacao inicial por issue autoriza leitura, alteracoes somente nos caminhos do Planner, validacao/testes e commits locais apenas na branch `bastiao/issue-N`. Aprovacoes persistem com TTL, uso unico e auditoria sanitizada; instalacao de dependencias, execucao JavaScript/Node arbitraria e inspecao Docker continuam exigindo aprovacao especifica. Quality Gate, validacao de diff e Reviewer permanecem obrigatorios antes da publicacao automatica da PR; merge continua manual. Nenhuma alteracao foi aplicada ao servidor ativo.
-- **#30 — recursos do sandbox: implementacao mergeada, manter aberta ate decisao do workspace.** A PR #51 valida limites de memoria, CPU, PIDs por container e `/tmp`; a PR #50 limita stdout/stderr. O limite de PIDs e agregado ao container, nao isolado por issue. `workspace/` continua sem quota agregada: `BASTIAO_MAX_WRITE_BYTES` cobre a ferramenta `write`, nao escritas feitas por comandos. Decidir se sera implementada quota no filesystem ou se a limitacao sera aceita explicitamente como fora de escopo. Os novos limites nao foram aplicados ao servico ativo; revisar `.env` legado (valores `0` desativam rlimits por subprocesso) e obter aprovacao operacional antes de qualquer implantacao.
-- **#31 — roadmap: atualizar/validar esta documentacao e entao fechar.** Esta revisao atualiza a situacao das issues e os criterios de conclusao; a issue fica aberta ate a documentacao ser revisada e mergeada.
+### M1 — Autonomia confiavel (1–2 semanas)
+- Mergear PR #55 (validacao Python no escopo, extrator de caminhos, branch de retry) e corrigir newline na PR #54.
+- Planner para issues sem caminhos explicitos (hoje escopo vazio nao produz patch).
+- CI nas PRs geradas (checks de testes).
+- Rodar 5 issues pequenas autorizadas uma a uma e registrar taxa de sucesso.
+- Loop de correcao limitado do Reviewer/Quality Gate (#33, #34).
 
-### Agente de desenvolvimento
+### M2 — Modelos e resiliencia (1–2 semanas)
+- Router de providers com fallback finito e observavel (#36).
+- Validar recuperacao apos reinicio (#37).
+- Decidir quota de `workspace/` e fechar #30.
 
-- **#22 — SWE-agent: manter aberta para clarificar escopo.** O Bastiao possui um fluxo proprio issue → planejamento → edicao/testes → publicacao de PR. Nao foi verificada integracao com o projeto SWE-agent upstream. Fechar apenas se o requisito era o agente proprio; caso contrario, redefinir o escopo.
-- **#25 — hello.py: manter aberta.** PRs #26 e #28 foram fechadas sem merge; o arquivo requerido nao esta na `main`. Fechar como nao planejada somente se este teste controlado nao for mais necessario.
-- **#33 — Reviewer: parcial, manter aberta.** Ha revisao deterministica de escopo/diff e validacao de certos requisitos explicitos; ainda faltam os criterios completos da issue, incluindo loop de correcao limitado e cobertura adequada de falhas do modelo.
-- **#34 — Quality Gate: parcial, manter aberta.** O gate executa verificacoes descobertas, registra evidencias e bloqueia PR em falha. A issue ainda exige repassar falhas ao agente para uma rodada de correcao limitada e verificar presenca de testes relacionados quando necessario; isso nao deve ser declarado concluido sem implementacao e testes.
+### M3 — Memoria (2–3 semanas)
+- Memoria persistente de licoes por issue/repo (#35); comecar com SQLite/JSONL, Chroma so se necessario.
+- Planner e Reviewer consultam a memoria antes de agir.
 
-### Fases futuras
+### M4 — Pipeline autodidata (3–4 semanas)
+- Fontes permitidas, coleta, resumo, plano de estudo e avaliacao reproduzivel (#38).
+- Auto-geracao de issues de melhoria a partir das licoes, sempre com aprovacao humana.
 
-- **#23 OpenHands e #24 hibrido:** adiadas ate controles de seguranca, qualidade e abstracao de provider estarem prontos; nao iniciar agora.
-- **#35 memoria persistente:** fase futura; Chroma nao e requisito do fluxo atual.
-- **#36 providers/router/fallback:** fase futura, com fallback finito e observavel.
-- **#37 observabilidade: parcial, manter aberta.** PR #49 entregou os artefatos basicos. Ainda e necessario demonstrar os criterios restantes, em particular recuperacao apos reinicio nas etapas principais, retencao/diagnostico e validacao operacional final. Nao habilitar 24/7.
-- **#38 pipeline autodidata:** fase futura; depende de memoria, fontes permitidas e avaliacao reproduzivel.
+### Depois
+- #22, #23, #24 so se M1–M3 mostrarem necessidade.
 
-## Proxima sequencia recomendada
+**Estimativa total: ~7–11 semanas de trabalho ate o criterio de pronto**, dependendo da taxa de sucesso medida em M1.
 
-1. Mergear esta atualizacao documental e fechar #31 apos revisao.
-2. Decidir o escopo da quota de `workspace/`; criar uma issue dedicada se a quota for necessaria. So entao decidir se #30 pode ser fechada como concluida com essa limitacao aceita e documentada.
-3. Completar #29, #33 e #34, com testes para expiracao/auditoria de aprovacao e correcao limitada do Reviewer/Quality Gate.
-4. Validar os criterios restantes de #37 sem operacao 24/7.
-5. Reavaliar #22 e #25 explicitamente; nao considerar PR fechada sem merge como evidencia de conclusao.
-6. Avancar para #36, depois #35 e entao #38; manter #23/#24 bloqueadas ate os pre-requisitos.
+## Regras que permanecem
 
-## Bloqueios de seguranca
-
-- Nao reiniciar, reconstruir ou substituir o container existente sem aprovacao operacional especifica.
-- Nao iniciar ciclos do agente nem reaproveitar aprovacoes persistidas de issues anteriores durante validacao.
-- Nao operar em modo 24/7 sem supervisao, nao fazer merge automatico e nao usar fallback ilimitado.
-- Nao integrar OpenHands antes de concluir os pre-requisitos de seguranca/qualidade.
-- Nao tratar status `complete` como prova suficiente de sucesso; exigir evidencias e revisao humana.
+- Merge sempre manual; nenhuma operacao 24/7 sem supervisao.
+- Aprovacao por issue (`approvals.json`, hoje vazia) ate M1 provar a taxa de sucesso; depois pode-se ampliar o escopo autorizado.
+- Fallback de providers sempre finito.
+- `complete` nao e prova de sucesso: exigir testes, evidencias e revisao.
+- Nao substituir o container sem manter rollback (`bastiao-autodidata-rollback-20261008`).
 
 ## Procedimento de retomada
 
-1. Verificar `main`, issues abertas e PRs abertas.
-2. Inspecionar container e checkout operacional sem modifica-los.
-3. Trabalhar em clone/branch isolados.
-4. Validar primeiro testes focados e depois a suite em Linux descartavel; executar `compileall`, `git diff --check` e validacao de Compose quando aplicavel.
-5. Pedir aprovacao antes de aplicar qualquer mudanca a implantacao ativa.
-6. Atualizar este roadmap e `docs/SESSION-CHECKPOINT.md` apos cada marco validado.
-
-Estado persistente do agente: `BASTIAO_STATE_DIR`, normalmente `/var/lib/bastiao` no container e `./state` no host.
+1. Verificar `main`, issues e PRs abertas.
+2. Inspecionar container e `state/` sem modifica-los.
+3. Trabalhar em clone/branch isolados; rodar a suite na imagem Docker.
+4. Atualizar este roadmap e `docs/SESSION-CHECKPOINT.md` a cada marco validado.

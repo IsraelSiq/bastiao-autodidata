@@ -4,10 +4,88 @@ Planeja implementacao baseado em issues.
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 import re
 
 from .github_client import GitHubIssue
+
+
+_REPOSITORY_ROOT_PATH_RE = re.compile(
+    r"(?<![\w./-])(?:docs|openwebui|scripts|src|tests)(?:/[A-Za-z0-9_.-]+)+"
+)
+_REPOSITORY_PATH_RE = re.compile(
+    r"(?<![\w./-])(?:\./)?(?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+"
+)
+_REPOSITORY_ROOT_PREFIX_RE = re.compile(r"^(?:docs|openwebui|scripts|src|tests)/")
+_FILE_PATH_SUFFIX_RE = re.compile(r"\.[A-Za-z0-9]{1,10}$")
+
+
+def extract_repository_paths(text: str) -> list[str]:
+    """Extract explicit relative file paths from prose and command examples."""
+    text = re.sub(r"https?://\S+", "", text.replace("\\", "/"))
+    candidates = {match.group(0) for match in _REPOSITORY_ROOT_PATH_RE.finditer(text)}
+    for code in re.findall(r"`([^`]+)`", text):
+        for match in _REPOSITORY_PATH_RE.finditer(code):
+            candidate = match.group(0).rstrip(".,;:!?)]}")
+            if (
+                _REPOSITORY_ROOT_PREFIX_RE.match(candidate)
+                or _FILE_PATH_SUFFIX_RE.search(candidate)
+            ):
+                candidates.add(candidate)
+
+    paths = set()
+    for candidate in candidates:
+        normalized = candidate
+        while normalized.startswith("./"):
+            normalized = normalized[2:]
+        if (
+            not normalized
+            or normalized.startswith("/")
+            or re.match(r"^[A-Za-z]:/", normalized)
+            or any(part in {".", ".."} for part in normalized.split("/"))
+        ):
+            continue
+        paths.add(normalized)
+    return sorted(paths)
+
+
+_BARE_FILENAME_RE = re.compile(
+    r"(?<![\w./-])([A-Za-z_][A-Za-z0-9_-]*\.(?:py|md|json|ya?ml|toml|txt|sh))(?![\w/-])"
+)
+_DEFAULT_DIR_BY_SUFFIX = {
+    ".py": "src",
+    ".md": "docs",
+    ".sh": "scripts",
+}
+_SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "state"}
+
+
+def resolve_bare_filenames(text: str, workspace: Optional[Path] = None) -> list[str]:
+    """Map bare file names (e.g. hello.py) to repository paths.
+
+    An existing unique match in the workspace wins; otherwise a conventional
+    directory for the extension is used (.py -> src, .md -> docs, .sh -> scripts).
+    Ambiguous names and unknown extensions are skipped.
+    """
+    text = re.sub(r"https?://\S+", "", text)
+    names = sorted({match.group(1) for match in _BARE_FILENAME_RE.finditer(text)})
+    resolved = []
+    for name in names:
+        matches = []
+        if workspace is not None and Path(workspace).is_dir():
+            root = Path(workspace)
+            for found in root.rglob(name):
+                rel = found.relative_to(root)
+                if found.is_file() and not (set(rel.parts) & _SKIP_DIRS):
+                    matches.append(rel.as_posix())
+        if len(matches) == 1:
+            resolved.append(matches[0])
+        elif not matches:
+            directory = _DEFAULT_DIR_BY_SUFFIX.get(Path(name).suffix)
+            if directory:
+                resolved.append(f"{directory}/{name}")
+    return resolved
 
 
 @dataclass
@@ -60,7 +138,9 @@ class IssuePlan:
             issue_number=int(data["issue_number"]),
             title=data["title"],
             acceptance_criteria=list(data.get("acceptance_criteria", [])),
-            allowed_paths=list(data.get("allowed_paths", [])),
+            allowed_paths=extract_repository_paths(
+                "\n".join(str(path) for path in data.get("allowed_paths", []))
+            ),
             steps=[PlanStep(**step) for step in data.get("steps", [])],
         )
 
@@ -72,7 +152,9 @@ class Planner:
         """Inicializa o planner."""
         pass
 
-    def build_issue_plan(self, issue: GitHubIssue) -> IssuePlan:
+    def build_issue_plan(
+        self, issue: GitHubIssue, workspace: Optional[Path] = None
+    ) -> IssuePlan:
         """Build a deterministic execution plan from issue text."""
         text = f"{issue.title}\n{issue.body or ''}"
         criteria = [
@@ -80,22 +162,9 @@ class Planner:
             for line in text.splitlines()
             if line.strip().startswith(("- [ ]", "- [x]", "- [X]"))
         ]
-        candidates = set(re.findall(r"`([^`]+)`", text))
-        candidates.update(
-            re.findall(
-                r"\b(?:src|tests|scripts|docs|utils|open-sse)(?:/[A-Za-z0-9_.-]+)+",
-                text,
-            )
-        )
-        paths = sorted(
-            {
-                value.replace("\\", "/").lstrip("./")
-                for value in candidates
-                if "/" in value
-                and not value.startswith(("http://", "https://"))
-                and not value.endswith("/")
-            }
-        )
+        paths = extract_repository_paths(text)
+        if not paths:
+            paths = sorted(set(resolve_bare_filenames(text, workspace)))
         steps = [
             PlanStep("inspect", "Inspecionar o repositorio", "read relevant files"),
             PlanStep("implement", "Implementar a mudanca", "write only allowed files"),

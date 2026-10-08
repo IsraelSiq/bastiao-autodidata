@@ -44,6 +44,21 @@ def test_tool_handler_enforces_planner_scope(tmp_path: Path):
     assert handler.write_file("src/allowed.py value") == "OK: Wrote src/allowed.py"
 
 
+def test_tool_handler_runs_only_a_planned_python_script(tmp_path: Path):
+    script = tmp_path / "src" / "hello.py"
+    other_script = tmp_path / "src" / "other.py"
+    script.parent.mkdir()
+    script.write_text("print('Hello from Bastiao!')\n", encoding="utf-8")
+    other_script.write_text("print('wrong')\n", encoding="utf-8")
+    handler = ToolHandler(
+        str(tmp_path), allowed_paths=["src/hello.py"], strict_scope=True
+    )
+
+    assert handler.execute("run python src/hello.py").strip() == "Hello from Bastiao!"
+    assert "outside the planner scope" in handler.execute("run python src/other.py")
+    assert "Action blocked" in handler.execute("run python src/hello.py extra")
+
+
 def test_tool_handler_disables_writes_when_strict_scope_is_empty(tmp_path: Path):
     handler = ToolHandler(str(tmp_path), strict_scope=True)
 

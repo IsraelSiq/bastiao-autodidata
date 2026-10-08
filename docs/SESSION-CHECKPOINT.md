@@ -49,3 +49,9 @@
 2. Definir quota do workspace e atualizar escopo/issue #30 conforme a decisao.
 3. Completar os requisitos pendentes de #29, #33, #34 e #37 com testes antes de ampliar autonomia.
 4. Manter o stack ativo intacto ate aprovacao expressa para implantacao.
+
+## Estado do M1 (autonomia confiavel)
+
+- Planner infere escopo de nomes de arquivo soltos; loop de correcao do Quality Gate (`BASTIAO_MAX_FIX_ROUNDS`, padrao 2) implementado; 127 testes passando.
+- Imagem `bastiao-autodidata:557e660` implantada; rollback: `bastiao-autodidata-rollback-20261008b` (parado).
+- Pendente: escopo `workflow` do token para publicar `ci.yml`; merge da PR #55; autorizar 5 issues pequenas e medir a taxa de sucesso; feedback do Reviewer no loop.
