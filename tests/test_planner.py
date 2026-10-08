@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from src.planner import IssuePlan, Planner
+from src.planner import IssuePlan, Planner, extract_repository_paths
 
 
 def test_plan_extracts_paths_without_treating_commands_as_files():
@@ -17,6 +17,12 @@ def test_plan_extracts_paths_without_treating_commands_as_files():
 
     assert plan.allowed_paths == ["src/hello.py"]
     assert "python src/hello.py" not in plan.allowed_paths
+
+
+def test_path_extraction_ignores_slash_separated_prose_terms():
+    text = "sem evidência/avaliação, Planner/Executor ou arquivo/linha"
+
+    assert extract_repository_paths(text) == []
 
 
 def test_path_extraction_preserves_other_repo_paths_and_rejects_traversal():

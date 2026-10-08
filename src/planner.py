@@ -10,27 +10,42 @@ import re
 from .github_client import GitHubIssue
 
 
-_REPOSITORY_PATH_RE = re.compile(
-    r"(?<![A-Za-z0-9_/-])(?:\./)?(?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+"
+_REPOSITORY_ROOT_PATH_RE = re.compile(
+    r"(?<![\w./-])(?:docs|openwebui|scripts|src|tests)(?:/[A-Za-z0-9_.-]+)+"
 )
+_REPOSITORY_PATH_RE = re.compile(
+    r"(?<![\w./-])(?:\./)?(?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+"
+)
+_REPOSITORY_ROOT_PREFIX_RE = re.compile(r"^(?:docs|openwebui|scripts|src|tests)/")
+_FILE_PATH_SUFFIX_RE = re.compile(r"\.[A-Za-z0-9]{1,10}$")
 
 
 def extract_repository_paths(text: str) -> list[str]:
     """Extract explicit relative file paths from prose and command examples."""
     text = re.sub(r"https?://\S+", "", text.replace("\\", "/"))
+    candidates = {match.group(0) for match in _REPOSITORY_ROOT_PATH_RE.finditer(text)}
+    for code in re.findall(r"`([^`]+)`", text):
+        for match in _REPOSITORY_PATH_RE.finditer(code):
+            candidate = match.group(0).rstrip(".,;:!?)]}")
+            if (
+                _REPOSITORY_ROOT_PREFIX_RE.match(candidate)
+                or _FILE_PATH_SUFFIX_RE.search(candidate)
+            ):
+                candidates.add(candidate)
+
     paths = set()
-    for match in _REPOSITORY_PATH_RE.finditer(text):
-        path = match.group(0).rstrip(".,;:!?)]}")
-        while path.startswith("./"):
-            path = path[2:]
+    for candidate in candidates:
+        normalized = candidate
+        while normalized.startswith("./"):
+            normalized = normalized[2:]
         if (
-            not path
-            or path.startswith("/")
-            or re.match(r"^[A-Za-z]:/", path)
-            or any(part in {".", ".."} for part in path.split("/"))
+            not normalized
+            or normalized.startswith("/")
+            or re.match(r"^[A-Za-z]:/", normalized)
+            or any(part in {".", ".."} for part in normalized.split("/"))
         ):
             continue
-        paths.add(path)
+        paths.add(normalized)
     return sorted(paths)
 
 
