@@ -4,6 +4,7 @@ Planeja implementacao baseado em issues.
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 import re
 
@@ -47,6 +48,44 @@ def extract_repository_paths(text: str) -> list[str]:
             continue
         paths.add(normalized)
     return sorted(paths)
+
+
+_BARE_FILENAME_RE = re.compile(
+    r"(?<![\w./-])([A-Za-z_][A-Za-z0-9_-]*\.(?:py|md|json|ya?ml|toml|txt|sh))(?![\w/-])"
+)
+_DEFAULT_DIR_BY_SUFFIX = {
+    ".py": "src",
+    ".md": "docs",
+    ".sh": "scripts",
+}
+_SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "state"}
+
+
+def resolve_bare_filenames(text: str, workspace: Optional[Path] = None) -> list[str]:
+    """Map bare file names (e.g. hello.py) to repository paths.
+
+    An existing unique match in the workspace wins; otherwise a conventional
+    directory for the extension is used (.py -> src, .md -> docs, .sh -> scripts).
+    Ambiguous names and unknown extensions are skipped.
+    """
+    text = re.sub(r"https?://\S+", "", text)
+    names = sorted({match.group(1) for match in _BARE_FILENAME_RE.finditer(text)})
+    resolved = []
+    for name in names:
+        matches = []
+        if workspace is not None and Path(workspace).is_dir():
+            root = Path(workspace)
+            for found in root.rglob(name):
+                rel = found.relative_to(root)
+                if found.is_file() and not (set(rel.parts) & _SKIP_DIRS):
+                    matches.append(rel.as_posix())
+        if len(matches) == 1:
+            resolved.append(matches[0])
+        elif not matches:
+            directory = _DEFAULT_DIR_BY_SUFFIX.get(Path(name).suffix)
+            if directory:
+                resolved.append(f"{directory}/{name}")
+    return resolved
 
 
 @dataclass
@@ -113,7 +152,9 @@ class Planner:
         """Inicializa o planner."""
         pass
 
-    def build_issue_plan(self, issue: GitHubIssue) -> IssuePlan:
+    def build_issue_plan(
+        self, issue: GitHubIssue, workspace: Optional[Path] = None
+    ) -> IssuePlan:
         """Build a deterministic execution plan from issue text."""
         text = f"{issue.title}\n{issue.body or ''}"
         criteria = [
@@ -122,6 +163,8 @@ class Planner:
             if line.strip().startswith(("- [ ]", "- [x]", "- [X]"))
         ]
         paths = extract_repository_paths(text)
+        if not paths:
+            paths = sorted(set(resolve_bare_filenames(text, workspace)))
         steps = [
             PlanStep("inspect", "Inspecionar o repositorio", "read relevant files"),
             PlanStep("implement", "Implementar a mudanca", "write only allowed files"),

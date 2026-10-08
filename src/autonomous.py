@@ -303,7 +303,7 @@ Steps:
                 plan = IssuePlan.from_dict(state.plan)
             else:
                 self._git("checkout", "-B", branch, "origin/main")
-                plan = self.planner.build_issue_plan(issue)
+                plan = self.planner.build_issue_plan(issue, self.workspace)
                 state = create_task_state(plan)
                 state.branch = branch
             if state is None:
